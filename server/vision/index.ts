@@ -35,7 +35,7 @@ export async function analyzeVideoBuffer(
   signal?: AbortSignal,
 ): Promise<VisionAnalysis> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "semenassist-"));
-  const safeExtension = /^\\.(mp4|mov|avi|mkv|webm)$/i.test(extension) ? extension.toLowerCase() : ".mp4";
+  const safeExtension = /^\.(mp4|mov|avi|mkv|webm)$/i.test(extension) ? extension.toLowerCase() : ".mp4";
   const videoPath = path.join(tempDir, `sample${safeExtension}`);
   try {
     await fs.writeFile(videoPath, buffer);
