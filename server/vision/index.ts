@@ -35,9 +35,10 @@ export async function analyzeVideoBuffer(
   signal?: AbortSignal,
 ): Promise<VisionAnalysis> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "semenassist-"));
-  const videoPath = path.join(tempDir, `sample${extension.startsWith(".") ? extension : `.${extension}`}`);
-  await fs.writeFile(videoPath, buffer);
+  const safeExtension = /^\\.(mp4|mov|avi|mkv|webm)$/i.test(extension) ? extension.toLowerCase() : ".mp4";
+  const videoPath = path.join(tempDir, `sample${safeExtension}`);
   try {
+    await fs.writeFile(videoPath, buffer);
     const scriptPath = path.join(process.cwd(), "server/vision/analyze_video.py");
     const output = await runProcess("/usr/bin/python3", ["-S", scriptPath, videoPath, String(calibration.micronsPerPixel), String(calibration.chamberDepth)], signal);
     const parsed = JSON.parse(output) as VisionAnalysis | { ok: false; error: string };
