@@ -55,6 +55,8 @@ class SemenAssistVisionModule : Module() {
     var sourceScale = 1.0
 
     for (index in 0 until sampleCount) {
+      // Keep the original sample slot as the timebase. Do not compress indices
+      // when MediaMetadataRetriever fails to decode an individual frame.
       val timeUs = (index.toLong() * durationMs * 1000L) / sampleCount
       val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST) ?: continue
       try {
@@ -70,7 +72,7 @@ class SemenAssistVisionModule : Module() {
         val detections = detect(scaled)
         if (scaled !== frame) scaled.recycle()
         counts.add(detections.size)
-        updateTracks(tracks, detections, processed)
+        updateTracks(tracks, detections, index)
         processed++
       } finally {
         frame.recycle()
@@ -81,7 +83,9 @@ class SemenAssistVisionModule : Module() {
     val validTracks = tracks.filter { it.points.size >= 3 }
     val durationSec = durationMs / 1000.0
     val adjustedScale = micronsPerPixel / sourceScale
-    val sampleRate = max(0.1, (processed - 1).toDouble() / durationSec)
+    // Samples are requested at duration / sampleCount intervals. Using processed
+    // frames or (sampleCount - 1) compresses time and biases velocity estimates.
+    val sampleRate = max(0.1, sampleCount.toDouble() / durationSec)
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
     val moving = metrics.count { (it["vsl"] ?: 0.0) >= 1.0 }
     val progressive = metrics.count { (it["vsl"] ?: 0.0) >= 1.5 && (it["lin"] ?: 0.0) >= 0.45 }
