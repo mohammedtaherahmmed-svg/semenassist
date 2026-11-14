@@ -58,3 +58,25 @@ These checks use synthetic coordinates. They verify mathematical and algorithmic
 Create a consented, de-identified, expert-annotated benchmark with sample/patient-wise splits. Each clip should record microscope/camera, objective magnification, chamber type/depth, pixel calibration, frame timestamps, acquisition conditions, and reviewer adjudication. Annotations should include sperm-head centroids or masks, visible tail traces where feasible, debris/overlap flags, and persistent track identity.
 
 Report detection precision/recall and localization error; tracking identity switches, fragmentation, and IDF1; and CASA metric agreement using Bland–Altman bias/limits and repeatability. Keep all synthetic and real-video benchmark results separate. Do not claim clinical validation until an appropriately designed validation study is completed.
+
+
+## Calibration and acquisition-quality control (0.2.0)
+
+The Android local engine now records per-frame mean luminance, grayscale contrast
+(standard deviation), Laplacian-variance sharpness proxy, and decoded-sample coverage.
+It raises engineering QC flags for under/over-exposure, low contrast, likely blur,
+low frame rate, short clips, low decoded coverage, low track counts, and unstable
+per-frame object counts. The thresholds are heuristic acquisition checks, not
+validated clinical acceptance limits. The reported quality score is an engineering
+screening score and must not be interpreted as diagnostic confidence.
+
+The calibration screen can calculate microns-per-pixel from a known stage-micrometer
+length divided by its measured image-pixel length. The user must use a traceable
+reference and repeat calibration whenever the phone, optics, magnification, or
+measurement chamber changes. Chamber depth remains a separately entered physical
+parameter; it is not inferred by the app.
+
+These changes improve traceability and warn about visibly poor acquisition but do
+not establish analytical accuracy. Verification still requires real microscope
+videos, reference annotations, device testing, and comparison with a validated
+laboratory CASA method.
