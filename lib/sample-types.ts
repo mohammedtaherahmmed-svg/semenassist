@@ -10,7 +10,7 @@ export type AiInterpretation = {
 };
 
 export type MorphologyRecord = {
-  method: "opencv-contour-screening" | "opencv-heuristic-morphology-v1" | "manual" | "hybrid";
+  method: "opencv-contour-screening" | "opencv-heuristic-morphology-v1" | "manual" | "hybrid" | "not-assessed-on-device";
   totalExamined: number;
   normalForms: number;
   roundHeads: number;
@@ -52,6 +52,7 @@ export type SampleRecord = {
   coveragePct?: number;
   analysisEngine?: string;
   analysisVersion?: string;
+  processingLocation?: "on-device" | "server";
   objectsDetected?: number;
   fps?: number;
   coefficientOfVariation?: number;
