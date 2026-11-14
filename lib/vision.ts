@@ -27,6 +27,7 @@ export type VisionAnalysis = {
   qualityIssues: string[];
   thresholds: Record<string, number>;
   coefficientOfVariation: number;
+  qualityMetrics: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
   kinematics: { vcl: number; vsl: number; vap: number; lin: number; str: number; wob: number; alh: number; bcf: number | null };
   morphology: MorphologyRecord;
   processingLocation?: "on-device";
