@@ -63,6 +63,12 @@ async function startServer() {
       res.status(400).json({ error: "بيانات المعايرة غير صالحة" });
       return;
     }
+    // Re-check after the body has been read to close the race between concurrent uploads.
+    if (!hasAnalysisCapacity()) {
+      res.setHeader("Retry-After", "30");
+      res.status(429).json({ error: "وصل الخادم إلى الحد المؤقت لعمليات تحليل الفيديو. حاول مرة أخرى بعد قليل." });
+      return;
+    }
     const job = createVideoAnalysisJob(req.body, { micronsPerPixel, chamberDepth }, req.header("x-video-extension") || ".mp4", ownerOpenId);
     res.status(202).json({ jobId: job.id, status: job.status, progress: job.progress, stage: job.stage });
     },
