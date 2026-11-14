@@ -10,6 +10,9 @@ import json
 import math
 import os
 import sys
+from statistics import median
+
+from metrics import track_metrics as calculate_track_metrics
 
 import cv2
 import numpy as np
@@ -117,62 +120,59 @@ def morphology_from_components(components):
     }
 
 
-def match_tracks(active, points, next_id):
-    unmatched = set(range(len(points)))
-    assignments = []
-    for track_id, track in list(active.items()):
-        if not points or not unmatched:
+def match_tracks(active, components, next_id, frame_index, max_distance=32, max_gap_frames=2):
+    """One-to-one global nearest-neighbour assignment for each sampled frame."""
+    points = [component["point"] for component in components]
+    candidates = []
+    for track_id, track in active.items():
+        gap = frame_index - track["last_frame"]
+        if gap < 1 or gap > max_gap_frames:
             continue
-        best = min(unmatched, key=lambda i: math.dist(track["last"], points[i]))
-        distance = math.dist(track["last"], points[best])
-        if distance <= 32:
-            assignments.append((track_id, points[best], distance))
-            unmatched.remove(best)
-    for track_id, point, distance in assignments:
+        for point_index, point in enumerate(points):
+            distance = math.dist(track["last"], point)
+            if distance <= max_distance:
+                candidates.append((distance, track_id, point_index))
+    candidates.sort(key=lambda item: item[0])
+    used_tracks, used_points = set(), set()
+    for distance, track_id, point_index in candidates:
+        if track_id in used_tracks or point_index in used_points:
+            continue
         track = active[track_id]
-        track["points"].append(point)
-        track["last"] = point
+        component = components[point_index]
+        track["points"].append(component["point"])
+        track["frame_indices"].append(frame_index)
+        track["shape_samples"].append(component)
+        track["last"] = component["point"]
+        track["last_frame"] = frame_index
         track["seen"] += 1
         track["distances"].append(distance)
-    for i in unmatched:
-        active[next_id] = {"points": [points[i]], "last": points[i], "seen": 1, "distances": []}
+        used_tracks.add(track_id)
+        used_points.add(point_index)
+    for point_index, component in enumerate(components):
+        if point_index in used_points:
+            continue
+        active[next_id] = {
+            "points": [component["point"]],
+            "frame_indices": [frame_index],
+            "shape_samples": [component],
+            "last": component["point"],
+            "last_frame": frame_index,
+            "seen": 1,
+            "distances": [],
+        }
         next_id += 1
     return next_id
 
 
-def line_distance(point, start, end):
-    x, y = point
-    x1, y1 = start
-    x2, y2 = end
-    denominator = math.hypot(y2 - y1, x2 - x1)
-    return abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1) / denominator if denominator else 0
-
-
-def track_metrics(track, microns_per_pixel, fps):
-    points = track["points"]
-    sample_dt = 2 / fps if fps > 0 else 1 / 15
-    elapsed = max(sample_dt * (len(points) - 1), sample_dt)
-    displacement_px = math.dist(points[0], points[-1]) if len(points) > 1 else 0
-    path_px = sum(math.dist(a, b) for a, b in zip(points, points[1:]))
-    smoothed = []
-    for index in range(len(points)):
-        window = points[max(0, index - 1): min(len(points), index + 2)]
-        smoothed.append((sum(item[0] for item in window) / len(window), sum(item[1] for item in window) / len(window)))
-    vap_px = sum(math.dist(a, b) for a, b in zip(smoothed, smoothed[1:]))
-    vcl = path_px * microns_per_pixel / elapsed
-    vsl = displacement_px * microns_per_pixel / elapsed
-    vap = vap_px * microns_per_pixel / elapsed
-    lateral = [line_distance(point, points[0], points[-1]) for point in points]
-    alh = (float(np.sqrt(np.mean(np.square(lateral)))) * microns_per_pixel) if lateral else 0
-    return {
-        "vcl": vcl,
-        "vsl": vsl,
-        "vap": vap,
-        "lin": vsl / vcl if vcl else 0,
-        "str": vsl / vap if vap else 0,
-        "wob": vap / vcl if vcl else 0,
-        "alh": alh,
-    }
+def representative_shapes(tracks):
+    """Use one median shape observation per track, not every repeated frame."""
+    keys = ("area", "width", "height", "aspect", "circularity", "solidity", "extent", "perimeter")
+    representatives = []
+    for track in tracks:
+        samples = track.get("shape_samples", [])
+        if samples:
+            representatives.append({key: median(float(sample[key]) for sample in samples) for key in keys})
+    return representatives
 
 
 def analyze(path, microns_per_pixel, chamber_depth):
@@ -180,6 +180,8 @@ def analyze(path, microns_per_pixel, chamber_depth):
     if not cap.isOpened():
         fail("تعذر فتح ملف الفيديو")
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+    if not math.isfinite(fps) or fps <= 0:
+        fps = 0.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -187,7 +189,6 @@ def analyze(path, microns_per_pixel, chamber_depth):
     active = {}
     next_id = 1
     counts = []
-    morphology_totals = {"totalExamined": 0, "normalForms": 0, "roundHeads": 0, "elongatedHeads": 0, "irregularHeads": 0, "coiledTails": 0, "bentTails": 0, "doubleTails": 0, "acrosomeAbnormal": 0, "midpieceDefects": 0, "confidence": 0.0}
     analysis_microns_per_pixel = microns_per_pixel
     processed = 0
     analyzed_source_frames = []
@@ -204,12 +205,8 @@ def analyze(path, microns_per_pixel, chamber_depth):
                 analysis_microns_per_pixel = microns_per_pixel / scale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             components = valid_components(gray)
-            points = [component["point"] for component in components]
-            next_id = match_tracks(active, points, next_id)
-            counts.append(len(points))
-            frame_morphology = morphology_from_components(components)
-            for key in morphology_totals:
-                morphology_totals[key] += frame_morphology[key]
+            next_id = match_tracks(active, components, next_id, processed, max_distance=32 * math.sqrt(sample_every), max_gap_frames=2 * sample_every)
+            counts.append(len(components))
             analyzed_source_frames.append(processed)
         processed += 1
     cap.release()
@@ -217,8 +214,8 @@ def analyze(path, microns_per_pixel, chamber_depth):
         fail("الفيديو لا يحتوي على إطارات قابلة للقراءة")
 
     tracks = [track for track in active.values() if track["seen"] >= 3]
-    effective_fps = fps / sample_every if fps > 0 else fps
-    metrics = [track_metrics(track, analysis_microns_per_pixel, effective_fps) for track in tracks]
+    calculation_fps = fps if fps > 0 else 15.0  # fallback only; qualityIssues marks this estimate as approximate
+    metrics = [calculate_track_metrics(track["points"], track["frame_indices"], analysis_microns_per_pixel, calculation_fps) for track in tracks]
     moving = [track for track, metric in zip(tracks, metrics) if metric["vsl"] >= 1]
     progressive = [track for track, metric in zip(tracks, metrics) if metric["vsl"] >= 1.5 and metric["lin"] >= 0.45]
     avg_count = float(np.mean(counts)) if counts else 0.0
@@ -241,18 +238,24 @@ def analyze(path, microns_per_pixel, chamber_depth):
         issues.append("عدد المسارات المكتشفة منخفض؛ راجع الإضاءة والتركيز.")
     if fps <= 0:
         issues.append("معدل الإطارات غير متاح؛ السرعات تقريبية.")
+    elif fps < 25:
+        issues.append("معدل الإطارات أقل من 25 إطارًا/ثانية؛ قد لا يلتقط الحركة السريعة بدقة كافية.")
+    if width < 640:
+        issues.append("الدقة الأفقية أقل من 640 بكسل؛ قد تتأثر دقة فصل الأجسام الصغيرة.")
     if count_cv > 0.1:
         issues.append("معامل التباين في عدد الأجسام أعلى من 10%؛ راجع ثبات المجال والإضاءة.")
     if duration and analyzed_duration / duration < 0.75:
         issues.append("تم تحليل جزء من الفيديو فقط؛ استخدم فيديو أقصر أو دقة أقل لإكمال التغطية.")
     quality = max(0, min(100, 100 - len(issues) * 16 + min(12, len(tracks) // 5)))
     average_metric = lambda key: round(float(np.mean([metric[key] for metric in metrics])) if metrics else 0.0, 2)
+    morphology_observations = representative_shapes(tracks)
+    morphology_totals = morphology_from_components(morphology_observations)
     morphology_total = morphology_totals["totalExamined"]
-    morphology_confidence = morphology_totals["confidence"] / max(1, len(counts))
+    morphology_confidence = morphology_totals["confidence"]
     abnormal_forms = max(0, morphology_total - morphology_totals["normalForms"])
     defect_count = morphology_totals["irregularHeads"] + morphology_totals["coiledTails"] + morphology_totals["bentTails"] + morphology_totals["doubleTails"] + morphology_totals["acrosomeAbnormal"] + morphology_totals["midpieceDefects"]
     morphology = {
-        "method": "opencv-heuristic-morphology-v1",
+        "method": "opencv-track-median-shape-proxy-v2",
         "totalExamined": morphology_total,
         "normalForms": morphology_totals["normalForms"],
         "roundHeads": morphology_totals["roundHeads"],
@@ -266,13 +269,15 @@ def analyze(path, microns_per_pixel, chamber_depth):
         "tzi": round(defect_count / max(1, abnormal_forms), 2),
         "sdi": round(defect_count / morphology_total, 3) if morphology_total else 0,
         "automaticConfidence": round(morphology_confidence, 2),
+        "confidenceInterpretation": "heuristic shape-consistency proxy; not a calibrated probability",
+        "uniqueTrackedObjects": len(morphology_observations),
         "krugerScreening": {"normalPercent": round(morphology_totals["normalForms"] / morphology_total * 100, 2) if morphology_total else 0, "abnormalPercent": round(abnormal_forms / morphology_total * 100, 2) if morphology_total else 0, "thresholdPercent": 4.0, "status": "screening-only"},
         "automaticLimitations": ["التصنيف الحالي heuristic من شكل الكونتور ولا يساوي نموذجًا مدربًا أو اعتماد Kruger.", "الأكروسوم والقطعة الوسطى والذيل تُقدّر من هندسة الجسم المتصل وقد تتأثر بالإضاءة والتداخل.", "يجب اعتماد العدد النهائي بعد مراجعة صورة صبغة/تكبير مناسب بواسطة فني أو مشرف."],
     }
     return {
         "ok": True,
         "engine": "opencv-centroid-tracker",
-        "engineVersion": "0.4.0-morphology-screening",
+        "engineVersion": "0.5.0-timestamped-tracking",
         "framesAnalyzed": analyzed_frames,
         "frameCount": frame_count,
         "fps": round(fps, 2),
@@ -289,6 +294,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
         "nonProgressiveMotility": round(non_progressive, 2),
         "immotile": round(immotile, 2),
         "confidence": round(max(0.25, min(0.95, quality / 100)), 2),
+        "confidenceInterpretation": "quality-score proxy; not a statistical or clinical probability",
         "qualityScore": int(quality),
         "qualityIssues": issues,
         "coefficientOfVariation": round(count_cv, 3),
@@ -307,7 +313,7 @@ def main():
         depth = float(sys.argv[3])
     except ValueError:
         fail("قيم المعايرة غير صالحة")
-    if microns <= 0 or depth <= 0 or not os.path.exists(path):
+    if not math.isfinite(microns) or not math.isfinite(depth) or microns <= 0 or depth <= 0 or not os.path.exists(path):
         fail("ملف الفيديو أو المعايرة غير صالحين")
     try:
         print(json.dumps(analyze(path, microns, depth), ensure_ascii=False))

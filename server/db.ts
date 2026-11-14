@@ -1,6 +1,6 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
+import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, laboratoryMembers, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -38,9 +38,34 @@ export async function saveSampleReport(input: {
   analysisEngine?: string; analysisVersion?: string; payload: unknown;
 }) {
   const db = await getDb(); if (!db) return null;
-  const payload = JSON.stringify(input.payload);
-  await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload }).onDuplicateKeyUpdate({ set: { ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload, updatedAt: new Date() } });
-  const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1); return result[0] ?? null;
+  const ownerOpenId = input.ownerOpenId ?? null;
+  const existing = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1);
+  if (existing[0] && existing[0].ownerOpenId !== ownerOpenId) {
+    throw new Error("لا تملك صلاحية تعديل هذه العينة");
+  }
+
+  const values = {
+    laboratoryId: input.laboratoryId ?? existing[0]?.laboratoryId ?? null,
+    calibrationId: input.calibrationId ?? existing[0]?.calibrationId ?? null,
+    videoAssetId: input.videoAssetId ?? existing[0]?.videoAssetId ?? null,
+    reviewStatus: input.reviewStatus,
+    analysisStatus: input.analysisStatus ?? "completed" as const,
+    analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker",
+    analysisVersion: input.analysisVersion ?? "0.1.0",
+    payload: JSON.stringify(input.payload),
+    updatedAt: new Date(),
+  };
+
+  if (existing[0]) {
+    const ownerCondition = ownerOpenId ? eq(sampleReports.ownerOpenId, ownerOpenId) : isNull(sampleReports.ownerOpenId);
+    await db.update(sampleReports).set(values).where(and(eq(sampleReports.sampleId, input.sampleId), ownerCondition));
+  } else {
+    // A concurrent duplicate insert fails rather than overwriting another user's report.
+    await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId, ...values });
+  }
+
+  const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1);
+  return result[0] ?? null;
 }
 
 export async function recordAnalysisRun(input: { sampleId: string; videoAssetId?: number; calibrationId?: number; engine: string; engineVersion: string; status: "queued" | "processing" | "completed" | "failed" | "cancelled"; result?: unknown; errorMessage?: string; processingMs?: number; startedAt?: Date; completedAt?: Date; }) {
@@ -80,7 +105,25 @@ export async function saveBenchmarkRun(input: { datasetVersion: string; engineVe
 }
 
 export async function getSampleReport(sampleId: string) { const db = await getDb(); if (!db) return null; const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, sampleId)).limit(1); return result[0] ?? null; }
-export async function listSampleReports(limit = 100, ownerOpenId?: string) { const db = await getDb(); if (!db) return []; const query = db.select().from(sampleReports); const filtered = ownerOpenId ? query.where(eq(sampleReports.ownerOpenId, ownerOpenId)) : query; return filtered.orderBy(desc(sampleReports.updatedAt)).limit(Math.min(limit, 200)); }
+export async function listSampleReports(limit = 100, ownerOpenId?: string, laboratoryIds: number[] = []) {
+  const db = await getDb(); if (!db) return [];
+  const conditions = [];
+  if (ownerOpenId) conditions.push(eq(sampleReports.ownerOpenId, ownerOpenId));
+  if (laboratoryIds.length) conditions.push(inArray(sampleReports.laboratoryId, laboratoryIds));
+  const query = db.select().from(sampleReports);
+  const filtered = conditions.length === 2 ? query.where(or(...conditions)) : conditions.length === 1 ? query.where(conditions[0]) : query;
+  return filtered.orderBy(desc(sampleReports.updatedAt)).limit(Math.min(limit, 200));
+}
+export async function getLaboratoryMembership(laboratoryId: number, userOpenId: string) {
+  const db = await getDb(); if (!db) return null;
+  const result = await db.select().from(laboratoryMembers).where(and(eq(laboratoryMembers.laboratoryId, laboratoryId), eq(laboratoryMembers.userOpenId, userOpenId), eq(laboratoryMembers.status, "active"))).limit(1);
+  return result[0] ?? null;
+}
+export async function listUserLaboratoryIds(userOpenId: string) {
+  const db = await getDb(); if (!db) return [];
+  const rows = await db.select({ laboratoryId: laboratoryMembers.laboratoryId }).from(laboratoryMembers).where(and(eq(laboratoryMembers.userOpenId, userOpenId), eq(laboratoryMembers.status, "active")));
+  return rows.map((row) => row.laboratoryId);
+}
 export async function appendAuditLog(input: InsertAuditLog) { const db = await getDb(); if (!db) return null; return db.insert(auditLogs).values(input); }
 export async function listAuditLogs(limit = 100) { const db = await getDb(); if (!db) return []; return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(Math.min(limit, 200)); }
 

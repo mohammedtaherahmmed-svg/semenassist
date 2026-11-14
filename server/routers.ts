@@ -1,10 +1,11 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { getSessionCookieName, getSessionCookieOptions } from "./_core/cookies";
 import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, router, supervisorProcedure, publicProcedure } from "./_core/trpc";
-import { appendAuditLog, createCalibrationProfile, getSampleReport, listAuditLogs, listCalibrationProfiles, listSampleReports, recordAnalysisRun, recordHumanReview, saveBenchmarkRun, saveSampleReport, setUserRole } from "./db";
+import { appendAuditLog, createCalibrationProfile, getLaboratoryMembership, getSampleReport, listAuditLogs, listCalibrationProfiles, listSampleReports, listUserLaboratoryIds, recordAnalysisRun, recordHumanReview, saveBenchmarkRun, saveSampleReport, setUserRole } from "./db";
 
 const reportInput = z.object({
   sampleId: z.string().min(1),
@@ -75,24 +76,60 @@ export const appRouter = router({
   }),
   samples: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      const canSeeAll = ctx.user.role === "supervisor" || ctx.user.role === "admin";
-      const rows = await listSampleReports(100, canSeeAll ? undefined : ctx.user.openId);
+      if (ctx.user.role === "admin") {
+        const rows = await listSampleReports(100);
+        return rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
+      }
+      const laboratoryIds = ctx.user.role === "supervisor" ? await listUserLaboratoryIds(ctx.user.openId) : [];
+      const rows = await listSampleReports(100, ctx.user.openId, laboratoryIds);
       return rows.map((row) => ({ ...row, payload: JSON.parse(row.payload) }));
     }),
     get: protectedProcedure.input(z.object({ sampleId: z.string().min(1) })).query(async ({ input, ctx }) => {
       const row = await getSampleReport(input.sampleId);
-      if (row && row.ownerOpenId !== ctx.user.openId && ctx.user.role === "technician") return null;
-      return row ? { ...row, payload: JSON.parse(row.payload) } : null;
+      if (!row) return null;
+      if (ctx.user.role !== "admin") {
+        if (row.laboratoryId) {
+          const membership = await getLaboratoryMembership(row.laboratoryId, ctx.user.openId);
+          if (!membership) return null;
+        } else if (row.ownerOpenId !== ctx.user.openId) return null;
+      }
+      return { ...row, payload: JSON.parse(row.payload) };
     }),
     save: protectedProcedure.input(storedSampleInput).mutation(async ({ input, ctx }) => {
-      const saved = await saveSampleReport({ ...input, ownerOpenId: ctx.user.openId, payload: input.sample });
+      if (input.reviewStatus !== "pending") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "اعتماد العينة يتم من خلال إجراء المراجعة المخصص فقط" });
+      }
+      const existing = await getSampleReport(input.sampleId);
+      if (existing?.reviewStatus === "reviewed") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن تعديل تقرير معتمد من خلال الحفظ العادي؛ استخدم مسار مراجعة مخولًا" });
+      }
+      if (existing && ctx.user.role !== "admin") {
+        if (existing.laboratoryId) {
+          const membership = await getLaboratoryMembership(existing.laboratoryId, ctx.user.openId);
+          if (!membership) throw new TRPCError({ code: "FORBIDDEN", message: "لا تملك عضوية نشطة في معمل هذه العينة" });
+        } else if (existing.ownerOpenId !== ctx.user.openId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "لا تملك صلاحية تعديل هذه العينة" });
+        }
+      }
+      const saved = await saveSampleReport({ ...input, ownerOpenId: existing?.ownerOpenId ?? ctx.user.openId, payload: input.sample });
       const sample = input.sample as Record<string, any>;
       if (input.analysisEngine && input.analysisVersion) await recordAnalysisRun({ sampleId: input.sampleId, engine: input.analysisEngine, engineVersion: input.analysisVersion, status: "completed", result: sample });
       await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "sample.save", entityType: "sample_report", entityId: input.sampleId, details: JSON.stringify({ reviewStatus: input.reviewStatus }) });
       return saved ? { ...saved, payload: JSON.parse(saved.payload) } : null;
     }),
     review: protectedProcedure.input(storedSampleInput).mutation(async ({ input, ctx }) => {
-      const saved = await saveSampleReport({ ...input, reviewStatus: "reviewed", ownerOpenId: ctx.user.openId, payload: input.sample });
+      const existing = await getSampleReport(input.sampleId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "العينة غير موجودة" });
+      if (ctx.user.role !== "admin") {
+        if (!existing.laboratoryId) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن مراجعة عينة غير مرتبطة بمعمل إلا بواسطة مسؤول النظام" });
+        }
+        const membership = await getLaboratoryMembership(existing.laboratoryId, ctx.user.openId);
+        if (!membership || !["supervisor", "admin"].includes(membership.role)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "مراجعة العينات متاحة لمشرفي المعمل فقط" });
+        }
+      }
+      const saved = await saveSampleReport({ ...input, reviewStatus: "reviewed", ownerOpenId: existing.ownerOpenId, payload: input.sample });
       const sample = input.sample as Record<string, any>;
       await recordHumanReview({ sampleId: input.sampleId, reviewerOpenId: ctx.user.openId, reviewerRole: ctx.user.role, correctedConcentration: typeof sample.correctedConcentration === "number" ? sample.correctedConcentration : undefined, correctedTotalMotility: typeof sample.correctedTotalMotility === "number" ? sample.correctedTotalMotility : undefined, correctedProgressiveMotility: typeof sample.correctedProgressiveMotility === "number" ? sample.correctedProgressiveMotility : undefined, morphology: sample.morphology, note: typeof sample.reviewerNote === "string" ? sample.reviewerNote : undefined });
       await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "sample.review", entityType: "sample_report", entityId: input.sampleId, details: JSON.stringify({ reviewStatus: "reviewed" }) });
@@ -110,8 +147,21 @@ export const appRouter = router({
     list: supervisorProcedure.query(() => listAuditLogs()),
   }),
   calibration: router({
-    list: protectedProcedure.input(z.object({ laboratoryId: z.number().int().positive() })).query(({ input }) => listCalibrationProfiles(input.laboratoryId)),
-    create: supervisorProcedure.input(z.object({ laboratoryId: z.number().int().positive(), name: z.string().min(1).max(160), deviceModel: z.string().max(120).optional(), lens: z.string().max(80).optional(), micronsPerPixel: z.number().positive(), chamberDepth: z.number().positive(), lightingSetup: z.string().max(2000).optional() })).mutation(({ input, ctx }) => createCalibrationProfile({ ...input, createdBy: ctx.user.openId })),
+    list: protectedProcedure.input(z.object({ laboratoryId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin" && !(await getLaboratoryMembership(input.laboratoryId, ctx.user.openId))) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "لا تملك عضوية نشطة في هذا المعمل" });
+      }
+      return listCalibrationProfiles(input.laboratoryId);
+    }),
+    create: supervisorProcedure.input(z.object({ laboratoryId: z.number().int().positive(), name: z.string().min(1).max(160), deviceModel: z.string().max(120).optional(), lens: z.string().max(80).optional(), micronsPerPixel: z.number().positive(), chamberDepth: z.number().positive(), lightingSetup: z.string().max(2000).optional() })).mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "admin") {
+        const membership = await getLaboratoryMembership(input.laboratoryId, ctx.user.openId);
+        if (!membership || !["supervisor", "admin"].includes(membership.role)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "إنشاء المعايرات متاح لمشرفي المعمل فقط" });
+        }
+      }
+      return createCalibrationProfile({ ...input, createdBy: ctx.user.openId });
+    }),
   }),
   benchmark: router({
     save: supervisorProcedure.input(z.object({ datasetVersion: z.string().min(1).max(80), engineVersion: z.string().min(1).max(32), sampleCount: z.number().int().nonnegative(), metrics: z.record(z.string(), z.unknown()), failedSamples: z.array(z.string()).optional() })).mutation(({ input }) => saveBenchmarkRun(input)),

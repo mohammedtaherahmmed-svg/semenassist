@@ -60,7 +60,7 @@ export default function NewSampleScreen() {
   async function runAnalysis() {
     if (!sampleId.trim()) return setError("أدخل معرّف العينة أولًا.");
     if (!calibration) return setError("أكمل المعايرة قبل بدء التحليل.");
-    if (!video) return setError("اختر فيديو للعينة أو استخدم فيديو تجريبي للمعاينة.");
+    if (!video?.uri) return setError("اختر ملف فيديو حقيقيًا قبل بدء التحليل. لا يمكن إنشاء تقرير من بيانات تجريبية.");
     setError("");
     setStage("uploading");
     setAnalysisProgress({ status: "queued", progress: 5, stage: "جاري تجهيز الفيديو" });
@@ -76,16 +76,19 @@ export default function NewSampleScreen() {
         setError(analysisError instanceof Error ? analysisError.message : "تعذر تحليل الفيديو الحقيقي.");
         return;
       }
-    } else {
-      setAnalysisProgress({ status: "completed", progress: 100, stage: "تم تجهيز المعاينة" });
+    }
+    if (!visionResult) {
+      setStage("idle");
+      setError("لم تُنتج عملية التحليل نتيجة صالحة؛ لم يتم حفظ تقرير.");
+      return;
     }
     setStage("saving");
-    const demo = createDemoSample({ id: sampleId.trim(), collectedAt, receivedAt, sampleType, notes, researchOptIn, videoName: video.name, videoSizeMb: video.sizeMb, videoDurationSec: video.durationSec });
-    const sample: SampleRecord = visionResult ? {
-      ...demo,
-          framesAnalyzed: visionResult.framesAnalyzed,
-          analyzedDurationSec: visionResult.analyzedDurationSec,
-          coveragePct: visionResult.coveragePct,
+    const sampleMetadata = createDemoSample({ id: sampleId.trim(), collectedAt, receivedAt, sampleType, notes, researchOptIn, videoName: video.name, videoSizeMb: video.sizeMb, videoDurationSec: video.durationSec });
+    const sample: SampleRecord = {
+      ...sampleMetadata,
+      framesAnalyzed: visionResult.framesAnalyzed,
+      analyzedDurationSec: visionResult.analyzedDurationSec,
+      coveragePct: visionResult.coveragePct,
       videoDurationSec: visionResult.durationSec,
       concentration: visionResult.concentration,
       progressiveMotility: visionResult.progressiveMotility,
@@ -103,7 +106,12 @@ export default function NewSampleScreen() {
       coefficientOfVariation: visionResult.coefficientOfVariation,
       kinematics: visionResult.kinematics,
       morphology: visionResult.morphology,
-    } : { ...demo, analysisEngine: "demo-screener", analysisVersion: "0.0.0" };
+      calibration: {
+        micronsPerPixel: calibration.micronsPerPixel,
+        chamberDepth: calibration.chamberDepth,
+        calibratedAt: new Date().toISOString(),
+      },
+    };
     await upsertSample(sample);
     if (user) {
       try {
