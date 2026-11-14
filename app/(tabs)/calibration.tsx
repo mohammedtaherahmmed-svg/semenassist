@@ -5,7 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-
 
 import { AppHeader, COLORS, MedicalBanner, PrimaryButton, SectionTitle, StatusPill } from "@/components/clinical-ui";
 import { ScreenContainer } from "@/components/screen-container";
-import { loadCalibration, saveCalibration, type CalibrationRecord } from "@/lib/sample-store";
+import { deleteCalibration, loadCalibration, saveCalibration, type CalibrationRecord } from "@/lib/sample-store";
 import { formatDate } from "@/lib/sample-types";
 import { calculateMicronsPerPixel, validateCalibration } from "@/shared/vision-quality";
 
@@ -62,7 +62,8 @@ export default function CalibrationScreen() {
     setSaved(true);
   }
 
-  function clearCalibration() {
+  async function clearCalibration() {
+    await deleteCalibration();
     setCalibration(null);
     setMicrons("");
     setDepth("20");
