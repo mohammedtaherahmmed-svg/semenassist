@@ -120,13 +120,13 @@ def morphology_from_components(components):
     }
 
 
-def match_tracks(active, components, next_id, frame_index, max_distance=32):
+def match_tracks(active, components, next_id, frame_index, max_distance=32, max_gap_frames=2):
     """One-to-one global nearest-neighbour assignment for each sampled frame."""
     points = [component["point"] for component in components]
     candidates = []
     for track_id, track in active.items():
         gap = frame_index - track["last_frame"]
-        if gap < 1 or gap > 2:
+        if gap < 1 or gap > max_gap_frames:
             continue
         for point_index, point in enumerate(points):
             distance = math.dist(track["last"], point)
@@ -180,6 +180,8 @@ def analyze(path, microns_per_pixel, chamber_depth):
     if not cap.isOpened():
         fail("تعذر فتح ملف الفيديو")
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 0)
+    if not math.isfinite(fps) or fps <= 0:
+        fps = 0.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
@@ -203,7 +205,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
                 analysis_microns_per_pixel = microns_per_pixel / scale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             components = valid_components(gray)
-            next_id = match_tracks(active, components, next_id, processed, max_distance=32 * math.sqrt(sample_every))
+            next_id = match_tracks(active, components, next_id, processed, max_distance=32 * math.sqrt(sample_every), max_gap_frames=2 * sample_every)
             counts.append(len(components))
             analyzed_source_frames.append(processed)
         processed += 1
@@ -212,7 +214,8 @@ def analyze(path, microns_per_pixel, chamber_depth):
         fail("الفيديو لا يحتوي على إطارات قابلة للقراءة")
 
     tracks = [track for track in active.values() if track["seen"] >= 3]
-    metrics = [calculate_track_metrics(track["points"], track["frame_indices"], analysis_microns_per_pixel, fps) for track in tracks]
+    calculation_fps = fps if fps > 0 else 15.0  # fallback only; qualityIssues marks this estimate as approximate
+    metrics = [calculate_track_metrics(track["points"], track["frame_indices"], analysis_microns_per_pixel, calculation_fps) for track in tracks]
     moving = [track for track, metric in zip(tracks, metrics) if metric["vsl"] >= 1]
     progressive = [track for track, metric in zip(tracks, metrics) if metric["vsl"] >= 1.5 and metric["lin"] >= 0.45]
     avg_count = float(np.mean(counts)) if counts else 0.0
