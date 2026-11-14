@@ -56,6 +56,7 @@ export type SampleRecord = {
   objectsDetected?: number;
   fps?: number;
   coefficientOfVariation?: number;
+  qualityMetrics?: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
   kinematics?: {
     vcl: number;
     vsl: number;
