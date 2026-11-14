@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { seedSamples, type SampleRecord } from "@/lib/sample-types";
+import { validateCalibration } from "@/shared/vision-quality";
 
 const SAMPLES_KEY = "semenassist.samples.v1";
 const CALIBRATION_KEY = "semenassist.calibration.v1";
@@ -46,12 +47,19 @@ export async function loadCalibration(): Promise<CalibrationRecord | null> {
   const raw = await AsyncStorage.getItem(CALIBRATION_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as CalibrationRecord;
+    const calibration = JSON.parse(raw) as CalibrationRecord;
+    return validateCalibration(calibration) ? null : calibration;
   } catch {
     return null;
   }
 }
 
 export async function saveCalibration(calibration: CalibrationRecord) {
+  const validationError = validateCalibration(calibration);
+  if (validationError) throw new Error(validationError);
   await AsyncStorage.setItem(CALIBRATION_KEY, JSON.stringify(calibration));
+}
+
+export async function deleteCalibration() {
+  await AsyncStorage.removeItem(CALIBRATION_KEY);
 }
