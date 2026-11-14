@@ -3,7 +3,9 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/security-and-clinical-improvements
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ jobs:
   build-apk:
     name: Build release APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout source
@@ -31,17 +33,28 @@ jobs:
         with:
           version: 9.12.0
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Validate TypeScript
         run: pnpm check
+
+      - name: Validate vision engine
+        working-directory: server/vision
+        run: |
+          python -m py_compile analyze_video.py metrics.py test_metrics.py
+          python -m unittest -v test_metrics.py
 
       - name: Generate native Android project
         run: pnpm exec expo prebuild --platform android --no-install --non-interactive
@@ -56,12 +69,12 @@ jobs:
           APK_PATH=$(find android/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           test -n "$APK_PATH"
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
-          cp "$APK_PATH" "semenassist-v1.0.5-release.apk"
+          cp "$APK_PATH" "semenassist-v1.0.5-preview.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: semenassist-v1.0.5-release-apk
-          path: semenassist-v1.0.5-release.apk
+          name: semenassist-v1.0.5-preview-apk
+          path: semenassist-v1.0.5-preview.apk
           if-no-files-found: error
           retention-days: 30
