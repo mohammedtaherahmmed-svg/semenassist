@@ -281,7 +281,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
     return {
         "ok": True,
         "engine": "opencv-centroid-tracker",
-        "engineVersion": "0.5.0-timestamped-tracking",
+        "engineVersion": "0.6.0-kalman-hungarian",
         "framesAnalyzed": analyzed_frames,
         "frameCount": frame_count,
         "fps": round(fps, 2),
