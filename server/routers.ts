@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { getSessionCookieName, getSessionCookieOptions } from "./_core/cookies";
@@ -81,18 +82,27 @@ export const appRouter = router({
     }),
     get: protectedProcedure.input(z.object({ sampleId: z.string().min(1) })).query(async ({ input, ctx }) => {
       const row = await getSampleReport(input.sampleId);
-      if (row && row.ownerOpenId !== ctx.user.openId && ctx.user.role === "technician") return null;
+      if (row && row.ownerOpenId !== ctx.user.openId && !["supervisor", "admin"].includes(ctx.user.role)) return null;
       return row ? { ...row, payload: JSON.parse(row.payload) } : null;
     }),
     save: protectedProcedure.input(storedSampleInput).mutation(async ({ input, ctx }) => {
-      const saved = await saveSampleReport({ ...input, ownerOpenId: ctx.user.openId, payload: input.sample });
+      const existing = await getSampleReport(input.sampleId);
+      if (existing && existing.ownerOpenId !== ctx.user.openId && !["supervisor", "admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "لا تملك صلاحية تعديل هذه العينة" });
+      }
+      const saved = await saveSampleReport({ ...input, ownerOpenId: existing?.ownerOpenId ?? ctx.user.openId, payload: input.sample });
       const sample = input.sample as Record<string, any>;
       if (input.analysisEngine && input.analysisVersion) await recordAnalysisRun({ sampleId: input.sampleId, engine: input.analysisEngine, engineVersion: input.analysisVersion, status: "completed", result: sample });
       await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "sample.save", entityType: "sample_report", entityId: input.sampleId, details: JSON.stringify({ reviewStatus: input.reviewStatus }) });
       return saved ? { ...saved, payload: JSON.parse(saved.payload) } : null;
     }),
     review: protectedProcedure.input(storedSampleInput).mutation(async ({ input, ctx }) => {
-      const saved = await saveSampleReport({ ...input, reviewStatus: "reviewed", ownerOpenId: ctx.user.openId, payload: input.sample });
+      const existing = await getSampleReport(input.sampleId);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "العينة غير موجودة" });
+      if (existing.ownerOpenId !== ctx.user.openId && !["supervisor", "admin"].includes(ctx.user.role)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "لا تملك صلاحية مراجعة هذه العينة" });
+      }
+      const saved = await saveSampleReport({ ...input, reviewStatus: "reviewed", ownerOpenId: existing.ownerOpenId, payload: input.sample });
       const sample = input.sample as Record<string, any>;
       await recordHumanReview({ sampleId: input.sampleId, reviewerOpenId: ctx.user.openId, reviewerRole: ctx.user.role, correctedConcentration: typeof sample.correctedConcentration === "number" ? sample.correctedConcentration : undefined, correctedTotalMotility: typeof sample.correctedTotalMotility === "number" ? sample.correctedTotalMotility : undefined, correctedProgressiveMotility: typeof sample.correctedProgressiveMotility === "number" ? sample.correctedProgressiveMotility : undefined, morphology: sample.morphology, note: typeof sample.reviewerNote === "string" ? sample.reviewerNote : undefined });
       await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "sample.review", entityType: "sample_report", entityId: input.sampleId, details: JSON.stringify({ reviewStatus: "reviewed" }) });
