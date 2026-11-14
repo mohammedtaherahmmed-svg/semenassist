@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -38,13 +38,34 @@ export async function saveSampleReport(input: {
   analysisEngine?: string; analysisVersion?: string; payload: unknown;
 }) {
   const db = await getDb(); if (!db) return null;
+  const ownerOpenId = input.ownerOpenId ?? null;
   const existing = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1);
-  if (existing[0] && existing[0].ownerOpenId !== (input.ownerOpenId ?? null)) {
+  if (existing[0] && existing[0].ownerOpenId !== ownerOpenId) {
     throw new Error("لا تملك صلاحية تعديل هذه العينة");
   }
-  const payload = JSON.stringify(input.payload);
-  await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload }).onDuplicateKeyUpdate({ set: { laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload, updatedAt: new Date() } });
-  const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1); return result[0] ?? null;
+
+  const values = {
+    laboratoryId: input.laboratoryId ?? null,
+    calibrationId: input.calibrationId ?? null,
+    videoAssetId: input.videoAssetId ?? null,
+    reviewStatus: input.reviewStatus,
+    analysisStatus: input.analysisStatus ?? "completed" as const,
+    analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker",
+    analysisVersion: input.analysisVersion ?? "0.1.0",
+    payload: JSON.stringify(input.payload),
+    updatedAt: new Date(),
+  };
+
+  if (existing[0]) {
+    const ownerCondition = ownerOpenId ? eq(sampleReports.ownerOpenId, ownerOpenId) : isNull(sampleReports.ownerOpenId);
+    await db.update(sampleReports).set(values).where(and(eq(sampleReports.sampleId, input.sampleId), ownerCondition));
+  } else {
+    // A concurrent duplicate insert fails rather than overwriting another user's report.
+    await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId, ...values });
+  }
+
+  const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1);
+  return result[0] ?? null;
 }
 
 export async function recordAnalysisRun(input: { sampleId: string; videoAssetId?: number; calibrationId?: number; engine: string; engineVersion: string; status: "queued" | "processing" | "completed" | "failed" | "cancelled"; result?: unknown; errorMessage?: string; processingMs?: number; startedAt?: Date; completedAt?: Date; }) {
