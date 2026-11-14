@@ -77,13 +77,18 @@ export default function NewSampleScreen() {
         return;
       }
     }
+    if (!visionResult) {
+      setStage("idle");
+      setError("لم تُنتج عملية التحليل نتيجة صالحة؛ لم يتم حفظ تقرير.");
+      return;
+    }
     setStage("saving");
-    const demo = createDemoSample({ id: sampleId.trim(), collectedAt, receivedAt, sampleType, notes, researchOptIn, videoName: video.name, videoSizeMb: video.sizeMb, videoDurationSec: video.durationSec });
-    const sample: SampleRecord = visionResult ? {
-      ...demo,
-          framesAnalyzed: visionResult.framesAnalyzed,
-          analyzedDurationSec: visionResult.analyzedDurationSec,
-          coveragePct: visionResult.coveragePct,
+    const sampleMetadata = createDemoSample({ id: sampleId.trim(), collectedAt, receivedAt, sampleType, notes, researchOptIn, videoName: video.name, videoSizeMb: video.sizeMb, videoDurationSec: video.durationSec });
+    const sample: SampleRecord = {
+      ...sampleMetadata,
+      framesAnalyzed: visionResult.framesAnalyzed,
+      analyzedDurationSec: visionResult.analyzedDurationSec,
+      coveragePct: visionResult.coveragePct,
       videoDurationSec: visionResult.durationSec,
       concentration: visionResult.concentration,
       progressiveMotility: visionResult.progressiveMotility,
@@ -101,7 +106,12 @@ export default function NewSampleScreen() {
       coefficientOfVariation: visionResult.coefficientOfVariation,
       kinematics: visionResult.kinematics,
       morphology: visionResult.morphology,
-    } : { ...demo, analysisEngine: "demo-screener", analysisVersion: "0.0.0" };
+      calibration: {
+        micronsPerPixel: calibration.micronsPerPixel,
+        chamberDepth: calibration.chamberDepth,
+        calibratedAt: new Date().toISOString(),
+      },
+    };
     await upsertSample(sample);
     if (user) {
       try {
