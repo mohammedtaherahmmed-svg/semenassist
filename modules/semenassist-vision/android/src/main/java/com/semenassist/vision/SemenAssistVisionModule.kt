@@ -182,28 +182,47 @@ class SemenAssistVisionModule : Module() {
   }
 
   private fun updateTracks(tracks: MutableList<Track>, detections: List<Detection>, frame: Int) {
-    val used = mutableSetOf<Int>()
-    for (track in tracks) {
+    data class Candidate(val distance: Double, val trackIndex: Int, val detectionIndex: Int)
+
+    val candidates = mutableListOf<Candidate>()
+    for (trackIndex in tracks.indices) {
+      val track = tracks[trackIndex]
       val last = track.last ?: continue
-      if (frame - track.lastFrame > 2) continue
-      var best = -1
-      var bestDistance = 22.0
-      for (index in detections.indices) {
-        if (index in used) continue
-        val point = detections[index]
+      val gap = frame - track.lastFrame
+      if (gap !in 1..2) continue
+      // Scale the search gate with the number of missed sample slots.
+      val maxDistance = 22.0 * gap
+      for (detectionIndex in detections.indices) {
+        val point = detections[detectionIndex]
         val distance = hypot(point.x - last.x, point.y - last.y)
-        if (distance < bestDistance) { best = index; bestDistance = distance }
-      }
-      if (best >= 0) {
-        track.points.add(detections[best])
-        track.frameIndices.add(frame)
-        track.last = detections[best]
-        track.lastFrame = frame
-        used.add(best)
+        if (distance <= maxDistance) {
+          candidates.add(Candidate(distance, trackIndex, detectionIndex))
+        }
       }
     }
-    for (index in detections.indices) if (index !in used) {
-      tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
+
+    // Resolve the globally closest pairs first; this avoids track-list order bias.
+    candidates.sortWith(compareBy<Candidate>({ it.distance }, { it.trackIndex }, { it.detectionIndex }))
+    val usedTracks = mutableSetOf<Int>()
+    val usedDetections = mutableSetOf<Int>()
+    for (candidate in candidates) {
+      if (!usedTracks.add(candidate.trackIndex)) continue
+      if (!usedDetections.add(candidate.detectionIndex)) {
+        usedTracks.remove(candidate.trackIndex)
+        continue
+      }
+      val track = tracks[candidate.trackIndex]
+      val detection = detections[candidate.detectionIndex]
+      track.points.add(detection)
+      track.frameIndices.add(frame)
+      track.last = detection
+      track.lastFrame = frame
+    }
+
+    for (index in detections.indices) {
+      if (index !in usedDetections) {
+        tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
+      }
     }
   }
 
