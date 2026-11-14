@@ -13,6 +13,7 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 private data class Detection(val x: Double, val y: Double)
+private data class FrameQuality(val meanBrightness: Double, val contrastStdDev: Double, val sharpnessVariance: Double)
 private data class Track(
   val points: MutableList<Detection> = mutableListOf(),
   val frameIndices: MutableList<Int> = mutableListOf(),
@@ -49,14 +50,14 @@ class SemenAssistVisionModule : Module() {
     val sampleCount = min(80, max(12, ceil(durationMs / 250.0).toInt()))
     val tracks = mutableListOf<Track>()
     val counts = mutableListOf<Int>()
+    val frameQualities = mutableListOf<FrameQuality>()
+    val decodedSlots = mutableListOf<Int>()
     var sourceWidth = 0
     var sourceHeight = 0
-    var processed = 0
     var sourceScale = 1.0
 
     for (index in 0 until sampleCount) {
-      // Keep the original sample slot as the timebase. Do not compress indices
-      // when MediaMetadataRetriever fails to decode an individual frame.
+      // Keep source sample slots as the timebase; missing decodes never compress time.
       val timeUs = (index.toLong() * durationMs * 1000L) / sampleCount
       val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST) ?: continue
       try {
@@ -69,22 +70,21 @@ class SemenAssistVisionModule : Module() {
           frame, max(1, (frame.width * sourceScale).toInt()),
           max(1, (frame.height * sourceScale).toInt()), true
         ) else frame
+        frameQualities.add(measureFrameQuality(scaled))
         val detections = detect(scaled)
         if (scaled !== frame) scaled.recycle()
         counts.add(detections.size)
+        decodedSlots.add(index)
         updateTracks(tracks, detections, index)
-        processed++
       } finally {
         frame.recycle()
       }
     }
-    require(processed >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
+    require(decodedSlots.size >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
 
     val validTracks = tracks.filter { it.points.size >= 3 }
     val durationSec = durationMs / 1000.0
     val adjustedScale = micronsPerPixel / sourceScale
-    // Samples are requested at duration / sampleCount intervals. Using processed
-    // frames or (sampleCount - 1) compresses time and biases velocity estimates.
     val sampleRate = sampleCount.toDouble() / durationSec
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
     val moving = metrics.count { (it["vsl"] ?: 0.0) >= 1.0 }
@@ -97,30 +97,56 @@ class SemenAssistVisionModule : Module() {
     val volumeUm3 = sourceWidth * sourceHeight * micronsPerPixel * micronsPerPixel * chamberDepth
     val volumeMl = volumeUm3 / 1.0e12
     val concentration = if (volumeMl > 0) averageCount / volumeMl / 1.0e6 else 0.0
+
+    val meanBrightness = frameQualities.map { it.meanBrightness }.average()
+    val contrastStdDev = frameQualities.map { it.contrastStdDev }.average()
+    val sharpnessVariance = frameQualities.map { it.sharpnessVariance }.average()
+    val coveragePct = decodedSlots.size * 100.0 / sampleCount
+    val analyzedDurationSec = if (decodedSlots.size < 2) 0.0 else
+      ((decodedSlots.last() - decodedSlots.first() + 1).toDouble() / sampleCount) * durationSec
+
     val issues = mutableListOf<String>()
     if (durationSec < 12) issues.add("مدة الفيديو أقل من 12 ثانية.")
-    if (processed < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
+    if (decodedSlots.size < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
+    if (coveragePct < 90.0) issues.add("تغطية فك الإطارات أقل من 90%؛ قد تكون بعض أجزاء الفيديو مفقودة.")
     if (validTracks.size < 5) issues.add("عدد المسارات المكتشفة منخفض؛ راجع الإضاءة والتركيز.")
     if (fpsMetadata == null) issues.add("معدل الإطارات غير متاح؛ استُخدمت قيمة تقريبية.")
+    else if (fps < 25) issues.add("معدل الإطارات أقل من 25 إطارًا/ثانية.")
     if (sourceWidth < 640) issues.add("دقة الفيديو أقل من 640 بكسل.")
+    if (meanBrightness < 35) issues.add("متوسط سطوع الإطارات منخفض؛ راجع الإضاءة.")
+    if (meanBrightness > 225) issues.add("الإطارات شديدة السطوع؛ قد تكون تفاصيل الخلايا مفقودة.")
+    if (contrastStdDev < 18) issues.add("التباين منخفض؛ راجع ضبط الإضاءة والتكثيف.")
+    if (sharpnessVariance < 12) issues.add("حدة الصورة منخفضة أو التركيز غير واضح.")
     val countMean = counts.average().takeIf { it > 0 } ?: 0.0
     val countCv = if (countMean > 0) sqrt(counts.map { (it - countMean) * (it - countMean) }.average()) / countMean else 1.0
     if (countCv > 0.1) issues.add("تباين عدد الأجسام بين الإطارات أعلى من 10%.")
-    val quality = max(0, min(100, 100 - issues.size * 16 + min(12, validTracks.size / 5)))
+    val quality = max(0, min(100, 100 - issues.size * 12 + min(12, validTracks.size / 5)))
     val avg = { key: String -> if (metrics.isEmpty()) 0.0 else metrics.map { it[key] ?: 0.0 }.average() }
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.1.0-local-frame-tracker",
-      "framesAnalyzed" to processed, "frameCount" to (durationSec * fps).toInt(),
+      "engineVersion" to "0.2.0-frame-qc",
+      "framesAnalyzed" to decodedSlots.size, "frameCount" to (durationSec * fps).toInt(),
       "fps" to fps, "width" to sourceWidth, "height" to sourceHeight,
-      "durationSec" to durationSec, "analyzedDurationSec" to durationSec,
-      "coveragePct" to 100.0, "objectsDetected" to validTracks.size,
+      "durationSec" to durationSec, "analyzedDurationSec" to analyzedDurationSec,
+      "coveragePct" to coveragePct, "objectsDetected" to validTracks.size,
       "averageObjectsPerFrame" to averageCount, "concentration" to concentration,
       "totalMotility" to totalMotility, "progressiveMotility" to progressiveMotility,
       "nonProgressiveMotility" to nonProgressive, "immotile" to immotile,
       "confidence" to (quality / 100.0), "qualityScore" to quality,
-      "qualityIssues" to issues, "thresholds" to mapOf("sampleFrames" to sampleCount.toDouble()),
+      "qualityIssues" to issues,
+      "qualityMetrics" to mapOf(
+        "meanBrightness" to meanBrightness,
+        "contrastStdDev" to contrastStdDev,
+        "sharpnessVariance" to sharpnessVariance,
+        "decodedFrameCoveragePct" to coveragePct
+      ),
+      "thresholds" to mapOf(
+        "sampleFrames" to sampleCount.toDouble(),
+        "minimumBrightness" to 35.0, "maximumBrightness" to 225.0,
+        "minimumContrastStdDev" to 18.0, "minimumSharpnessVariance" to 12.0,
+        "minimumDecodedCoveragePct" to 90.0
+      ),
       "coefficientOfVariation" to countCv,
       "kinematics" to mapOf("vcl" to avg("vcl"), "vsl" to avg("vsl"), "vap" to avg("vap"),
         "lin" to avg("lin"), "str" to avg("str"), "wob" to avg("wob"), "alh" to avg("alh"), "bcf" to 0.0),
@@ -129,9 +155,40 @@ class SemenAssistVisionModule : Module() {
         "coiledTails" to 0, "bentTails" to 0, "doubleTails" to 0, "acrosomeAbnormal" to 0,
         "midpieceDefects" to 0, "tzi" to 0.0, "sdi" to 0.0,
         "automaticLimitations" to listOf("تحليل الشكل المجهري غير متاح في المحرك المحلي الأولي.")),
-      "confidenceInterpretation" to "quality-score proxy; not a clinical probability",
+      "confidenceInterpretation" to "heuristic acquisition-quality score; not a clinical probability",
       "processingLocation" to "on-device"
     )
+  }
+
+  private fun measureFrameQuality(bitmap: Bitmap): FrameQuality {
+    val width = bitmap.width
+    val height = bitmap.height
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val gray = IntArray(pixels.size)
+    var sum = 0.0
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val value = (0.299 * ((p shr 16) and 255) + 0.587 * ((p shr 8) and 255) + 0.114 * (p and 255)).toInt()
+      gray[i] = value
+      sum += value
+    }
+    val mean = sum / max(1, gray.size)
+    val variance = gray.map { (it - mean) * (it - mean) }.average().coerceAtLeast(0.0)
+    var laplacianSquared = 0.0
+    var samples = 0
+    if (width >= 3 && height >= 3) {
+      for (y in 1 until height - 1) {
+        for (x in 1 until width - 1) {
+          val index = y * width + x
+          val laplacian = gray[index - 1] + gray[index + 1] + gray[index - width] + gray[index + width] - 4 * gray[index]
+          laplacianSquared += laplacian.toDouble() * laplacian
+          samples++
+        }
+      }
+    }
+    val sharpness = if (samples > 0) laplacianSquared / samples else 0.0
+    return FrameQuality(mean, sqrt(variance), sharpness)
   }
 
   private fun detect(bitmap: Bitmap): List<Detection> {
@@ -190,18 +247,14 @@ class SemenAssistVisionModule : Module() {
       val last = track.last ?: continue
       val gap = frame - track.lastFrame
       if (gap !in 1..2) continue
-      // Scale the search gate with the number of missed sample slots.
       val maxDistance = 22.0 * gap
       for (detectionIndex in detections.indices) {
         val point = detections[detectionIndex]
         val distance = hypot(point.x - last.x, point.y - last.y)
-        if (distance <= maxDistance) {
-          candidates.add(Candidate(distance, trackIndex, detectionIndex))
-        }
+        if (distance <= maxDistance) candidates.add(Candidate(distance, trackIndex, detectionIndex))
       }
     }
 
-    // Resolve the globally closest pairs first; this avoids track-list order bias.
     candidates.sortWith(compareBy<Candidate>({ it.distance }, { it.trackIndex }, { it.detectionIndex }))
     val usedTracks = mutableSetOf<Int>()
     val usedDetections = mutableSetOf<Int>()
@@ -218,11 +271,8 @@ class SemenAssistVisionModule : Module() {
       track.last = detection
       track.lastFrame = frame
     }
-
     for (index in detections.indices) {
-      if (index !in usedDetections) {
-        tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
-      }
+      if (index !in usedDetections) tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
     }
   }
 
