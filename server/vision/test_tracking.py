@@ -6,8 +6,8 @@ from tracking import greedy_assign
 class GreedyAssignmentTests(unittest.TestCase):
     def test_global_nearest_pair_wins_not_track_iteration_order(self):
         # Track 0 can use either detection, but track 1 is much closer to detection 0.
-        matches = greedy_assign([(0.0, 0.0), (2.0, 0.0)], [(1.0, 0.0), (-2.0, 0.0)], 4.0)
-        self.assertEqual(matches, [(0, 1), (1, 0)])
+        matches = greedy_assign([(0.0, 0.0), (3.0, 0.0)], [(2.0, 0.0), (-2.0, 0.0)], 5.0)
+        self.assertEqual(matches, [(1, 0), (0, 1)])
 
     def test_assignment_is_one_to_one(self):
         matches = greedy_assign([(0.0, 0.0), (0.2, 0.0)], [(0.1, 0.0)], 1.0)
