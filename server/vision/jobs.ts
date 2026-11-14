@@ -6,6 +6,7 @@ type JobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 
 type Job = {
   id: string;
+  ownerOpenId: string;
   status: JobStatus;
   progress: number;
   stage: string;
@@ -24,9 +25,10 @@ export function createVideoAnalysisJob(
   buffer: Buffer,
   calibration: { micronsPerPixel: number; chamberDepth: number },
   extension: string,
+  ownerOpenId: string,
 ) {
   const id = `analysis_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const job: Job = { id, status: "queued", progress: 5, stage: "تم استلام الفيديو", createdAt: Date.now(), updatedAt: Date.now() };
+  const job: Job = { id, ownerOpenId, status: "queued", progress: 5, stage: "تم استلام الفيديو", createdAt: Date.now(), updatedAt: Date.now() };
   jobs.set(id, job);
   trimJobs();
 
