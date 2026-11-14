@@ -14,11 +14,68 @@ import kotlin.math.sqrt
 
 private data class Detection(val x: Double, val y: Double)
 private data class FrameQuality(val meanBrightness: Double, val contrastStdDev: Double, val sharpnessVariance: Double)
+private class KalmanAxis(initial: Double) {
+  var position = initial
+  var velocity = 0.0
+  private var p00 = 25.0
+  private var p01 = 0.0
+  private var p10 = 0.0
+  private var p11 = 25.0
+  private val measurementNoise = 4.0
+  private val processNoise = 0.05
+
+  fun predict(dt: Double) {
+    val dt2 = dt * dt
+    val dt3 = dt2 * dt
+    val dt4 = dt2 * dt2
+    val old00 = p00
+    val old01 = p01
+    val old10 = p10
+    val old11 = p11
+    position += dt * velocity
+    p00 = old00 + dt * (old10 + old01) + dt2 * old11 + processNoise * dt4 / 4.0
+    p01 = old01 + dt * old11 + processNoise * dt3 / 2.0
+    p10 = old10 + dt * old11 + processNoise * dt3 / 2.0
+    p11 = old11 + processNoise * dt2
+  }
+
+  fun update(measurement: Double) {
+    val innovation = measurement - position
+    val denominator = p00 + measurementNoise
+    val k0 = p00 / denominator
+    val k1 = p10 / denominator
+    position += k0 * innovation
+    velocity += k1 * innovation
+    val old00 = p00
+    val old01 = p01
+    p00 = (1.0 - k0) * old00
+    p01 = (1.0 - k0) * old01
+    p10 -= k1 * old00
+    p11 -= k1 * old01
+  }
+}
+
+private class Kalman2D(initial: Detection) {
+  private val x = KalmanAxis(initial.x)
+  private val y = KalmanAxis(initial.y)
+  fun predict(dt: Double) : Detection {
+    x.predict(dt)
+    y.predict(dt)
+    return Detection(x.position, y.position)
+  }
+  fun update(measurement: Detection) {
+    x.update(measurement.x)
+    y.update(measurement.y)
+  }
+}
+
 private data class Track(
-  val points: MutableList<Detection> = mutableListOf(),
-  val frameIndices: MutableList<Int> = mutableListOf(),
-  var last: Detection? = null,
-  var lastFrame: Int = -1
+  val points: MutableList<Detection>,
+  val frameIndices: MutableList<Int>,
+  var last: Detection,
+  var lastFrame: Int,
+  val kalman: Kalman2D,
+  var kalmanFrame: Int
 )
 
 class SemenAssistVisionModule : Module() {
@@ -238,44 +295,118 @@ class SemenAssistVisionModule : Module() {
     return output
   }
 
-  private fun updateTracks(tracks: MutableList<Track>, detections: List<Detection>, frame: Int) {
-    data class Candidate(val distance: Double, val trackIndex: Int, val detectionIndex: Int)
-
-    val candidates = mutableListOf<Candidate>()
-    for (trackIndex in tracks.indices) {
-      val track = tracks[trackIndex]
-      val last = track.last ?: continue
-      val gap = frame - track.lastFrame
-      if (gap !in 1..2) continue
-      val maxDistance = 22.0 * gap
-      for (detectionIndex in detections.indices) {
-        val point = detections[detectionIndex]
-        val distance = hypot(point.x - last.x, point.y - last.y)
-        if (distance <= maxDistance) candidates.add(Candidate(distance, trackIndex, detectionIndex))
-      }
+  private fun hungarian(costs: Array<DoubleArray>): List<Pair<Int, Int>> {
+    val size = costs.size
+    if (size == 0) return emptyList()
+    val u = DoubleArray(size + 1)
+    val v = DoubleArray(size + 1)
+    val p = IntArray(size + 1)
+    val way = IntArray(size + 1)
+    for (i in 1..size) {
+      p[0] = i
+      var j0 = 0
+      val minv = DoubleArray(size + 1) { Double.POSITIVE_INFINITY }
+      val used = BooleanArray(size + 1)
+      do {
+        used[j0] = true
+        val i0 = p[j0]
+        var delta = Double.POSITIVE_INFINITY
+        var j1 = 0
+        for (j in 1..size) {
+          if (!used[j]) {
+            val current = costs[i0 - 1][j - 1] - u[i0] - v[j]
+            if (current < minv[j]) {
+              minv[j] = current
+              way[j] = j0
+            }
+            if (minv[j] < delta) {
+              delta = minv[j]
+              j1 = j
+            }
+          }
+        }
+        for (j in 0..size) {
+          if (used[j]) {
+            u[p[j]] += delta
+            v[j] -= delta
+          } else {
+            minv[j] -= delta
+          }
+        }
+        j0 = j1
+      } while (p[j0] != 0)
+      do {
+        val j1 = way[j0]
+        p[j0] = p[j1]
+        j0 = j1
+      } while (j0 != 0)
     }
-
-    candidates.sortWith(compareBy<Candidate>({ it.distance }, { it.trackIndex }, { it.detectionIndex }))
-    val usedTracks = mutableSetOf<Int>()
-    val usedDetections = mutableSetOf<Int>()
-    for (candidate in candidates) {
-      if (!usedTracks.add(candidate.trackIndex)) continue
-      if (!usedDetections.add(candidate.detectionIndex)) {
-        usedTracks.remove(candidate.trackIndex)
-        continue
-      }
-      val track = tracks[candidate.trackIndex]
-      val detection = detections[candidate.detectionIndex]
-      track.points.add(detection)
-      track.frameIndices.add(frame)
-      track.last = detection
-      track.lastFrame = frame
-    }
-    for (index in detections.indices) {
-      if (index !in usedDetections) tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
-    }
+    val result = mutableListOf<Pair<Int, Int>>()
+    for (j in 1..size) if (p[j] != 0) result.add(Pair(p[j] - 1, j - 1))
+    return result
   }
 
+  private fun updateTracks(tracks: MutableList<Track>, detections: List<Detection>, frame: Int) {
+    val eligible = mutableListOf<Int>()
+    val predicted = mutableListOf<Detection>()
+    for (index in tracks.indices) {
+      val track = tracks[index]
+      val gap = frame - track.lastFrame
+      if (gap !in 1..2) continue
+      val dt = max(1, frame - track.kalmanFrame)
+      predicted.add(track.kalman.predict(dt.toDouble()))
+      track.kalmanFrame = frame
+      eligible.add(index)
+    }
+
+    val trackCount = eligible.size
+    val detectionCount = detections.size
+    val size = trackCount + detectionCount
+    val usedDetections = mutableSetOf<Int>()
+    if (size > 0) {
+      val unmatchedCost = 23.0
+      val invalidCost = unmatchedCost * (size + 2) * 1_000_000.0
+      val costs = Array(size) { DoubleArray(size) }
+      for (i in 0 until trackCount) {
+        for (j in 0 until detectionCount) {
+          val distance = hypot(predicted[i].x - detections[j].x, predicted[i].y - detections[j].y)
+          costs[i][j] = if (distance <= 22.0 * max(1, frame - tracks[eligible[i]].lastFrame)) distance else invalidCost
+        }
+        for (j in detectionCount until size) costs[i][j] = unmatchedCost
+      }
+      for (i in trackCount until size) {
+        for (j in 0 until detectionCount) costs[i][j] = unmatchedCost
+        for (j in detectionCount until size) costs[i][j] = 0.0
+      }
+      for ((row, column) in hungarian(costs)) {
+        if (row >= trackCount || column >= detectionCount) continue
+        val track = tracks[eligible[row]]
+        val detection = detections[column]
+        val distance = hypot(predicted[row].x - detection.x, predicted[row].y - detection.y)
+        val gate = 22.0 * max(1, frame - track.lastFrame)
+        if (distance > gate) continue
+        track.kalman.update(detection)
+        track.points.add(detection)
+        track.frameIndices.add(frame)
+        track.last = detection
+        track.lastFrame = frame
+        usedDetections.add(column)
+      }
+    }
+
+    for (index in detections.indices) {
+      if (index in usedDetections) continue
+      val detection = detections[index]
+      tracks.add(Track(
+        mutableListOf(detection),
+        mutableListOf(frame),
+        detection,
+        frame,
+        Kalman2D(detection),
+        frame
+      ))
+    }
+  }
   private fun trackMetrics(track: Track, micronsPerPixel: Double, sampleRate: Double): Map<String, Double> {
     val points = track.points
     val elapsed = (track.frameIndices.last() - track.frameIndices.first()) / sampleRate
