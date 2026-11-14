@@ -32,13 +32,14 @@ export async function analyzeVideoBuffer(
   buffer: Buffer,
   calibration: { micronsPerPixel: number; chamberDepth: number },
   extension = ".mp4",
+  signal?: AbortSignal,
 ): Promise<VisionAnalysis> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "semenassist-"));
   const videoPath = path.join(tempDir, `sample${extension.startsWith(".") ? extension : `.${extension}`}`);
   await fs.writeFile(videoPath, buffer);
   try {
     const scriptPath = path.join(process.cwd(), "server/vision/analyze_video.py");
-    const output = await runProcess("/usr/bin/python3", ["-S", scriptPath, videoPath, String(calibration.micronsPerPixel), String(calibration.chamberDepth)]);
+    const output = await runProcess("/usr/bin/python3", ["-S", scriptPath, videoPath, String(calibration.micronsPerPixel), String(calibration.chamberDepth)], signal);
     const parsed = JSON.parse(output) as VisionAnalysis | { ok: false; error: string };
     if (!parsed.ok) throw new Error(parsed.error);
     return parsed;
@@ -47,17 +48,25 @@ export async function analyzeVideoBuffer(
   }
 }
 
-function runProcess(command: string, args: string[]) {
+function runProcess(command: string, args: string[], signal?: AbortSignal) {
   return new Promise<string>((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("تم إيقاف عملية التحليل"));
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONPATH: "/usr/lib/python3/dist-packages" } });
     let stdout = "";
     let stderr = "";
+    const onAbort = () => child.kill("SIGKILL");
+    signal?.addEventListener("abort", onAbort, { once: true });
     child.stdout.on("data", (chunk) => { stdout += String(chunk); });
     child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-    child.on("error", reject);
-    child.on("close", (code) => {
+    child.on("error", (error) => {
+      signal?.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+    child.on("close", (code, childSignal) => {
+      signal?.removeEventListener("abort", onAbort);
+      if (signal?.aborted) return reject(new Error("تم إيقاف عملية التحليل"));
       if (code === 0) return resolve(stdout.trim());
-      reject(new Error(stderr.trim() || `OpenCV process exited with ${code}`));
+      reject(new Error(stderr.trim() || `OpenCV process exited with ${code ?? childSignal ?? "unknown"}`));
     });
   });
 }
