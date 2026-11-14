@@ -10,6 +10,7 @@ on:
       - main
       - feature/security-and-clinical-improvements
       - feature/android-vision-timestamp-accuracy
+      - feature/casa-validation-baseline
 
 permissions:
   contents: read
@@ -63,8 +64,8 @@ jobs:
       - name: Validate vision engine
         working-directory: server/vision
         run: |
-          python -m py_compile analyze_video.py metrics.py test_metrics.py
-          python -m unittest -v test_metrics.py
+          python -m py_compile analyze_video.py metrics.py tracking.py test_metrics.py test_tracking.py
+          python -m unittest -v test_metrics.py test_tracking.py
 
       - name: Generate native Android project
         run: pnpm exec expo prebuild --platform android --no-install --non-interactive
