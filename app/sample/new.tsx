@@ -60,7 +60,7 @@ export default function NewSampleScreen() {
   async function runAnalysis() {
     if (!sampleId.trim()) return setError("أدخل معرّف العينة أولًا.");
     if (!calibration) return setError("أكمل المعايرة قبل بدء التحليل.");
-    if (!video) return setError("اختر فيديو للعينة أو استخدم فيديو تجريبي للمعاينة.");
+    if (!video?.uri) return setError("اختر ملف فيديو حقيقيًا قبل بدء التحليل. لا يمكن إنشاء تقرير من بيانات تجريبية.");
     setError("");
     setStage("uploading");
     setAnalysisProgress({ status: "queued", progress: 5, stage: "جاري تجهيز الفيديو" });
@@ -76,8 +76,6 @@ export default function NewSampleScreen() {
         setError(analysisError instanceof Error ? analysisError.message : "تعذر تحليل الفيديو الحقيقي.");
         return;
       }
-    } else {
-      setAnalysisProgress({ status: "completed", progress: 100, stage: "تم تجهيز المعاينة" });
     }
     setStage("saving");
     const demo = createDemoSample({ id: sampleId.trim(), collectedAt, receivedAt, sampleType, notes, researchOptIn, videoName: video.name, videoSizeMb: video.sizeMb, videoDurationSec: video.durationSec });
