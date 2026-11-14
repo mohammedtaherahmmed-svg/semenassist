@@ -53,7 +53,7 @@ jobs:
       - name: Locate APK
         id: apk
         run: |
-          APK_PATH=$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          APK_PATH=$(find android/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           test -n "$APK_PATH"
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
           cp "$APK_PATH" "semenassist-v1.0.5-release.apk"
