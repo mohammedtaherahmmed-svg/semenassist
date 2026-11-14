@@ -8,7 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { createCorsMiddleware } from "./cors";
 import { clearLegacySessionCookie } from "./cookies";
-import { cancelVideoAnalysisJob, createVideoAnalysisJob, getVideoAnalysisJob } from "../vision/jobs";
+import { cancelVideoAnalysisJob, createVideoAnalysisJob, getVideoAnalysisJob, hasAnalysisCapacity } from "../vision/jobs";
 import { MAX_VIDEO_BYTES, MAX_VIDEO_LABEL } from "../../shared/vision-config";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
@@ -36,6 +36,11 @@ async function startServer() {
     async (req, res, next) => {
       const ownerOpenId = await requireApiUser(req, res);
       if (!ownerOpenId) return;
+      if (!hasAnalysisCapacity()) {
+        res.setHeader("Retry-After", "30");
+        res.status(429).json({ error: "وصل الخادم إلى الحد المؤقت لعمليات تحليل الفيديو. حاول مرة أخرى بعد قليل." });
+        return;
+      }
       (req as express.Request & { apiUserOpenId?: string }).apiUserOpenId = ownerOpenId;
       next();
     },
