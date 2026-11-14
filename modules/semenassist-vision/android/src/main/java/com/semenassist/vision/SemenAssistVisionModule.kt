@@ -442,15 +442,4 @@ class SemenAssistVisionModule : Module() {
     }
   }
 
-  private fun trackMetrics(points: List<Detection>, micronsPerPixel: Double, sampleFps: Double): Map<String, Double> {
-    val elapsed = (points.size - 1) / max(1.0, sampleFps)
-    val path = points.zipWithNext().sumOf { hypot(it.second.x - it.first.x, it.second.y - it.first.y) }
-    val displacement = hypot(points.last().x - points.first().x, points.last().y - points.first().y)
-    val vcl = path * micronsPerPixel / elapsed
-    val vsl = displacement * micronsPerPixel / elapsed
-    return mapOf("vcl" to vcl, "vsl" to vsl, "vap" to vcl,
-      "lin" to if (vcl > 0) vsl / vcl else 0.0,
-      "str" to if (vcl > 0) vsl / vcl else 0.0,
-      "wob" to 1.0, "alh" to 0.0)
-  }
 }
