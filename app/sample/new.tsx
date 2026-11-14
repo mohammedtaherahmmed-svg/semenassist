@@ -101,6 +101,7 @@ export default function NewSampleScreen() {
       qualityIssues: visionResult.qualityIssues,
       analysisEngine: visionResult.engine,
       analysisVersion: visionResult.engineVersion,
+      processingLocation: visionResult.processingLocation,
       objectsDetected: visionResult.objectsDetected,
       fps: visionResult.fps,
       coefficientOfVariation: visionResult.coefficientOfVariation,
@@ -137,7 +138,7 @@ export default function NewSampleScreen() {
     <View style={styles.calibrationRow}><MaterialIcons name={calibration ? "verified" : "warning-amber"} size={20} color={calibration ? COLORS.success : COLORS.warning} /><Text style={styles.calibrationText}>{calibration ? "المعايرة موجودة — جاهز للتحليل" : "المعايرة غير موجودة — اذهب إلى تبويب المعايرة أولًا"}</Text></View>
     <Pressable onPress={() => setResearchOptIn((value) => !value)} style={styles.consentRow}><View style={[styles.checkbox, researchOptIn && styles.checkboxActive]}>{researchOptIn ? <MaterialIcons name="check" size={15} color={COLORS.paper} /> : null}</View><Text style={styles.consentText}>أوافق اختياريًا على استخدام هذه البيانات المراجعة لتحسين النموذج البحثي.</Text></Pressable>
     {error ? <View style={styles.errorRow}><MaterialIcons name="error-outline" size={18} color={COLORS.danger} /><Text style={styles.errorText}>{error}</Text></View> : null}
-    <PrimaryButton label={stage === "idle" ? "بدء التحليل" : stage === "uploading" ? "جاري رفع الفيديو…" : stage === "processing" ? `جاري فحص الإطارات ${analysisProgress?.progress ?? 0}%` : "حفظ التقرير…"} icon="analytics" onPress={runAnalysis} loading={busy} disabled={!calibration || !video} />
+    <PrimaryButton label={stage === "idle" ? "بدء التحليل المحلي" : stage === "uploading" ? "جاري تجهيز الفيديو…" : stage === "processing" ? `تحليل محلي على الهاتف ${analysisProgress?.progress ?? 0}%` : "حفظ التقرير…"} icon="analytics" onPress={runAnalysis} loading={busy} disabled={!calibration || !video} />
     {analysisProgress && busy ? <View style={styles.progressStatus}><Text style={styles.progressStatusText}>{analysisProgress.stage} · {analysisProgress.progress}%</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${analysisProgress.progress}%` }]} /></View></View> : null}
     <Text style={styles.helper}>{user ? "بعد الحفظ ستتم مزامنة التقرير مع قاعدة المختبر وتسجيل العملية." : "الوضع الحالي محلي؛ سجّل الدخول لحفظ التقرير على قاعدة المختبر."} النتيجة الأولية تحتاج مراجعة فنية.</Text>
   </ScrollView></ScreenContainer>;
