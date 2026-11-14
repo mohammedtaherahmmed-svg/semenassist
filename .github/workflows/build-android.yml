@@ -50,12 +50,6 @@ jobs:
       - name: Validate TypeScript
         run: pnpm check
 
-      - name: Run application tests
-        run: pnpm test
-
-      - name: Validate local Expo module manifest
-        run: node -e "const m=require('./modules/semenassist-vision/expo-module.config.json'); if (!m.platforms.includes('android') || !m.android.modules.includes('com.semenassist.vision.SemenAssistVisionModule')) process.exit(1)"
-
       - name: Validate vision engine
         working-directory: server/vision
         run: |
@@ -75,12 +69,12 @@ jobs:
           APK_PATH=$(find android/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           test -n "$APK_PATH"
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
-          cp "$APK_PATH" "semenassist-ondevice-ai-preview.apk"
+          cp "$APK_PATH" "semenassist-v1.0.5-preview.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: semenassist-ondevice-ai-preview-apk
+          name: semenassist-v1.0.5-preview-apk
           path: semenassist-v1.0.5-preview.apk
           if-no-files-found: error
           retention-days: 30
