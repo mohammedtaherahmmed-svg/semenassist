@@ -182,7 +182,7 @@ class SemenAssistVisionModule : Module() {
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.2.0-frame-qc",
+      "engineVersion" to "0.3.0-kalman-hungarian",
       "framesAnalyzed" to decodedSlots.size, "frameCount" to (durationSec * fps).toInt(),
       "fps" to fps, "width" to sourceWidth, "height" to sourceHeight,
       "durationSec" to durationSec, "analyzedDurationSec" to analyzedDurationSec,
@@ -364,7 +364,7 @@ class SemenAssistVisionModule : Module() {
     val size = trackCount + detectionCount
     val usedDetections = mutableSetOf<Int>()
     if (size > 0) {
-      val unmatchedCost = 23.0
+      val unmatchedCost = 45.0
       val invalidCost = unmatchedCost * (size + 2) * 1_000_000.0
       val costs = Array(size) { DoubleArray(size) }
       for (i in 0 until trackCount) {
