@@ -11,6 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { loadCalibration, upsertSample, type CalibrationRecord } from "@/lib/sample-store";
 import { createDemoSample, type SampleRecord } from "@/lib/sample-types";
 import { analyzeVideoUri, type AnalysisProgress } from "@/lib/vision";
+import { validateCalibration } from "@/shared/vision-quality";
 
 type Stage = "idle" | "uploading" | "processing" | "saving";
 
@@ -60,6 +61,8 @@ export default function NewSampleScreen() {
   async function runAnalysis() {
     if (!sampleId.trim()) return setError("أدخل معرّف العينة أولًا.");
     if (!calibration) return setError("أكمل المعايرة قبل بدء التحليل.");
+    const calibrationError = validateCalibration(calibration);
+    if (calibrationError) return setError(calibrationError);
     if (!video?.uri) return setError("اختر ملف فيديو حقيقيًا قبل بدء التحليل. لا يمكن إنشاء تقرير من بيانات تجريبية.");
     setError("");
     setStage("uploading");
@@ -105,12 +108,13 @@ export default function NewSampleScreen() {
       objectsDetected: visionResult.objectsDetected,
       fps: visionResult.fps,
       coefficientOfVariation: visionResult.coefficientOfVariation,
+      qualityMetrics: visionResult.qualityMetrics,
       kinematics: visionResult.kinematics,
       morphology: visionResult.morphology,
       calibration: {
         micronsPerPixel: calibration.micronsPerPixel,
         chamberDepth: calibration.chamberDepth,
-        calibratedAt: new Date().toISOString(),
+        calibratedAt: calibration.calibratedAt,
       },
     };
     await upsertSample(sample);
