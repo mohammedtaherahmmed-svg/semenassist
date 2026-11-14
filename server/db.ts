@@ -38,8 +38,12 @@ export async function saveSampleReport(input: {
   analysisEngine?: string; analysisVersion?: string; payload: unknown;
 }) {
   const db = await getDb(); if (!db) return null;
+  const existing = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1);
+  if (existing[0] && existing[0].ownerOpenId !== (input.ownerOpenId ?? null)) {
+    throw new Error("لا تملك صلاحية تعديل هذه العينة");
+  }
   const payload = JSON.stringify(input.payload);
-  await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload }).onDuplicateKeyUpdate({ set: { ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload, updatedAt: new Date() } });
+  await db.insert(sampleReports).values({ sampleId: input.sampleId, ownerOpenId: input.ownerOpenId ?? null, laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload }).onDuplicateKeyUpdate({ set: { laboratoryId: input.laboratoryId ?? null, calibrationId: input.calibrationId ?? null, videoAssetId: input.videoAssetId ?? null, reviewStatus: input.reviewStatus, analysisStatus: input.analysisStatus ?? "completed", analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker", analysisVersion: input.analysisVersion ?? "0.1.0", payload, updatedAt: new Date() } });
   const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, input.sampleId)).limit(1); return result[0] ?? null;
 }
 
