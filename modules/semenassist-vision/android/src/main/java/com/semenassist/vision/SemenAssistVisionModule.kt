@@ -85,7 +85,7 @@ class SemenAssistVisionModule : Module() {
     val adjustedScale = micronsPerPixel / sourceScale
     // Samples are requested at duration / sampleCount intervals. Using processed
     // frames or (sampleCount - 1) compresses time and biases velocity estimates.
-    val sampleRate = max(0.1, sampleCount.toDouble() / durationSec)
+    val sampleRate = sampleCount.toDouble() / durationSec
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
     val moving = metrics.count { (it["vsl"] ?: 0.0) >= 1.0 }
     val progressive = metrics.count { (it["vsl"] ?: 0.0) >= 1.5 && (it["lin"] ?: 0.0) >= 0.45 }
