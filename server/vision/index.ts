@@ -25,6 +25,29 @@ export type VisionAnalysis = {
   confidence: number;
   qualityScore: number;
   qualityIssues: string[];
+  confidenceInterpretation?: string;
+  coefficientOfVariation?: number;
+  kinematics?: { vcl: number; vsl: number; vap: number; lin: number; str: number; wob: number; alh: number; bcf: number | null };
+  morphology?: {
+    method: string;
+    totalExamined: number;
+    normalForms: number;
+    roundHeads: number;
+    elongatedHeads: number;
+    irregularHeads: number;
+    coiledTails: number;
+    bentTails: number;
+    doubleTails: number;
+    acrosomeAbnormal: number;
+    midpieceDefects: number;
+    tzi: number;
+    sdi: number;
+    automaticConfidence: number;
+    confidenceInterpretation: string;
+    uniqueTrackedObjects: number;
+    krugerScreening: { normalPercent: number; abnormalPercent: number; thresholdPercent: number; status: "screening-only" };
+    automaticLimitations: string[];
+  };
   thresholds: Record<string, number>;
 };
 
