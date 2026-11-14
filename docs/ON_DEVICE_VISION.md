@@ -28,3 +28,16 @@ The analysis function does not upload video bytes or call the analysis API. The 
 8. Add morphology only after validated image acquisition and expert-labelled stained preparations.
 
 Do not use current outputs for diagnosis, treatment decisions, or patient-facing clinical claims. Keep results marked as research/screening-only until the required analytical and clinical validation is completed.
+
+## Sampling-time correction (Android)
+
+The Android tracker now keeps each requested sample's original slot index instead of
+renumbering successfully decoded frames. This preserves gaps when a frame cannot be
+decoded. Track velocity calculations use the requested sampling frequency
+(`sampleCount / durationSec`), corresponding to the actual interval
+(`durationSec / sampleCount`) between frame requests. This prevents decode gaps from
+artificially shortening elapsed time and biasing velocity estimates upward.
+
+This is a software-level timing correction, not clinical validation. The tracker,
+detection thresholds, calibration assumptions, and CASA classification thresholds
+still require verification against timestamped, annotated microscope videos.
