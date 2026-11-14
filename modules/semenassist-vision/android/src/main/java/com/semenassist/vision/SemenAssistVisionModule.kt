@@ -80,6 +80,7 @@ class SemenAssistVisionModule : Module() {
     require(processed >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
 
     val validTracks = tracks.filter { it.points.size >= 3 }
+    val durationSec = durationMs / 1000.0
     val adjustedScale = micronsPerPixel / sourceScale
     val sampleRate = max(0.1, (processed - 1).toDouble() / durationSec)
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
@@ -93,7 +94,6 @@ class SemenAssistVisionModule : Module() {
     val volumeUm3 = sourceWidth * sourceHeight * micronsPerPixel * micronsPerPixel * chamberDepth
     val volumeMl = volumeUm3 / 1.0e12
     val concentration = if (volumeMl > 0) averageCount / volumeMl / 1.0e6 else 0.0
-    val durationSec = durationMs / 1000.0
     val issues = mutableListOf<String>()
     if (durationSec < 12) issues.add("مدة الفيديو أقل من 12 ثانية.")
     if (processed < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
