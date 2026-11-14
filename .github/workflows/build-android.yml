@@ -81,6 +81,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: semenassist-ondevice-ai-preview-apk
-          path: semenassist-v1.0.5-preview.apk
+          path: semenassist-ondevice-ai-preview.apk
           if-no-files-found: error
           retention-days: 30
