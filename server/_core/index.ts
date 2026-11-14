@@ -71,7 +71,8 @@ async function startServer() {
       res.status(404).json({ error: "وظيفة التحليل غير موجودة أو انتهت صلاحيتها" });
       return;
     }
-    res.json(job);
+    const { ownerOpenId: _ownerOpenId, ...publicJob } = job;
+    res.json(publicJob);
   });
 
   app.post("/api/analyze-video/:jobId/cancel", async (req, res) => {
