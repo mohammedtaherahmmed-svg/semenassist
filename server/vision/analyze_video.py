@@ -274,7 +274,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
     return {
         "ok": True,
         "engine": "opencv-centroid-tracker",
-        "engineVersion": "0.4.0-morphology-screening",
+        "engineVersion": "0.5.0-timestamped-tracking",
         "framesAnalyzed": analyzed_frames,
         "frameCount": frame_count,
         "fps": round(fps, 2),
@@ -310,7 +310,7 @@ def main():
         depth = float(sys.argv[3])
     except ValueError:
         fail("قيم المعايرة غير صالحة")
-    if microns <= 0 or depth <= 0 or not os.path.exists(path):
+    if not math.isfinite(microns) or not math.isfinite(depth) or microns <= 0 or depth <= 0 or not os.path.exists(path):
         fail("ملف الفيديو أو المعايرة غير صالحين")
     try:
         print(json.dumps(analyze(path, microns, depth), ensure_ascii=False))
