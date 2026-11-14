@@ -41,3 +41,20 @@ artificially shortening elapsed time and biasing velocity estimates upward.
 This is a software-level timing correction, not clinical validation. The tracker,
 detection thresholds, calibration assumptions, and CASA classification thresholds
 still require verification against timestamped, annotated microscope videos.
+
+
+## CASA validation baseline (phase A)
+
+The repository now carries deterministic software-level regression checks for:
+
+- Kinematic invariants: stationary tracks, skipped source-frame intervals, calibration scaling, and the relationship between curvilinear and straight-line velocity.
+- One-to-one assignment: global nearest-pair selection, no duplicate track/detection assignment, distance-gate rejection, and deterministic tie handling.
+- Android tracker parity: the on-device tracker uses globally sorted candidate pairs and increases its search gate for a one-slot missed sample.
+
+These checks use synthetic coordinates. They verify mathematical and algorithmic behavior only; they do not establish detection accuracy on sperm microscopy videos, clinical agreement, or diagnostic performance.
+
+### Required real-video benchmark before clinical interpretation
+
+Create a consented, de-identified, expert-annotated benchmark with sample/patient-wise splits. Each clip should record microscope/camera, objective magnification, chamber type/depth, pixel calibration, frame timestamps, acquisition conditions, and reviewer adjudication. Annotations should include sperm-head centroids or masks, visible tail traces where feasible, debris/overlap flags, and persistent track identity.
+
+Report detection precision/recall and localization error; tracking identity switches, fragmentation, and IDF1; and CASA metric agreement using Bland–Altman bias/limits and repeatability. Keep all synthetic and real-video benchmark results separate. Do not claim clinical validation until an appropriately designed validation study is completed.

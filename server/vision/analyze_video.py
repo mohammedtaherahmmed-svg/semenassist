@@ -13,6 +13,7 @@ import sys
 from statistics import median
 
 from metrics import track_metrics as calculate_track_metrics
+from tracking import greedy_assign
 
 import cv2
 import numpy as np
@@ -121,24 +122,20 @@ def morphology_from_components(components):
 
 
 def match_tracks(active, components, next_id, frame_index, max_distance=32, max_gap_frames=2):
-    """One-to-one global nearest-neighbour assignment for each sampled frame."""
+    """Update tracks with deterministic global one-to-one nearest-neighbour matches."""
     points = [component["point"] for component in components]
-    candidates = []
-    for track_id, track in active.items():
-        gap = frame_index - track["last_frame"]
-        if gap < 1 or gap > max_gap_frames:
-            continue
-        for point_index, point in enumerate(points):
-            distance = math.dist(track["last"], point)
-            if distance <= max_distance:
-                candidates.append((distance, track_id, point_index))
-    candidates.sort(key=lambda item: item[0])
-    used_tracks, used_points = set(), set()
-    for distance, track_id, point_index in candidates:
-        if track_id in used_tracks or point_index in used_points:
-            continue
+    eligible_ids = [
+        track_id for track_id, track in active.items()
+        if 1 <= frame_index - track["last_frame"] <= max_gap_frames
+    ]
+    track_positions = [active[track_id]["last"] for track_id in eligible_ids]
+    matches = greedy_assign(track_positions, points, max_distance)
+    used_points = set()
+    for track_index, point_index in matches:
+        track_id = eligible_ids[track_index]
         track = active[track_id]
         component = components[point_index]
+        distance = math.dist(track["last"], component["point"])
         track["points"].append(component["point"])
         track["frame_indices"].append(frame_index)
         track["shape_samples"].append(component)
@@ -146,8 +143,8 @@ def match_tracks(active, components, next_id, frame_index, max_distance=32, max_
         track["last_frame"] = frame_index
         track["seen"] += 1
         track["distances"].append(distance)
-        used_tracks.add(track_id)
         used_points.add(point_index)
+
     for point_index, component in enumerate(components):
         if point_index in used_points:
             continue
