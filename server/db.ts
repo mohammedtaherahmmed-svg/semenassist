@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
+import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, laboratoryMembers, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -45,9 +45,9 @@ export async function saveSampleReport(input: {
   }
 
   const values = {
-    laboratoryId: input.laboratoryId ?? null,
-    calibrationId: input.calibrationId ?? null,
-    videoAssetId: input.videoAssetId ?? null,
+    laboratoryId: input.laboratoryId ?? existing[0]?.laboratoryId ?? null,
+    calibrationId: input.calibrationId ?? existing[0]?.calibrationId ?? null,
+    videoAssetId: input.videoAssetId ?? existing[0]?.videoAssetId ?? null,
     reviewStatus: input.reviewStatus,
     analysisStatus: input.analysisStatus ?? "completed" as const,
     analysisEngine: input.analysisEngine ?? "opencv-centroid-tracker",
@@ -105,7 +105,25 @@ export async function saveBenchmarkRun(input: { datasetVersion: string; engineVe
 }
 
 export async function getSampleReport(sampleId: string) { const db = await getDb(); if (!db) return null; const result = await db.select().from(sampleReports).where(eq(sampleReports.sampleId, sampleId)).limit(1); return result[0] ?? null; }
-export async function listSampleReports(limit = 100, ownerOpenId?: string) { const db = await getDb(); if (!db) return []; const query = db.select().from(sampleReports); const filtered = ownerOpenId ? query.where(eq(sampleReports.ownerOpenId, ownerOpenId)) : query; return filtered.orderBy(desc(sampleReports.updatedAt)).limit(Math.min(limit, 200)); }
+export async function listSampleReports(limit = 100, ownerOpenId?: string, laboratoryIds: number[] = []) {
+  const db = await getDb(); if (!db) return [];
+  const conditions = [];
+  if (ownerOpenId) conditions.push(eq(sampleReports.ownerOpenId, ownerOpenId));
+  if (laboratoryIds.length) conditions.push(inArray(sampleReports.laboratoryId, laboratoryIds));
+  const query = db.select().from(sampleReports);
+  const filtered = conditions.length === 2 ? query.where(or(...conditions)) : conditions.length === 1 ? query.where(conditions[0]) : query;
+  return filtered.orderBy(desc(sampleReports.updatedAt)).limit(Math.min(limit, 200));
+}
+export async function getLaboratoryMembership(laboratoryId: number, userOpenId: string) {
+  const db = await getDb(); if (!db) return null;
+  const result = await db.select().from(laboratoryMembers).where(and(eq(laboratoryMembers.laboratoryId, laboratoryId), eq(laboratoryMembers.userOpenId, userOpenId), eq(laboratoryMembers.status, "active"))).limit(1);
+  return result[0] ?? null;
+}
+export async function listUserLaboratoryIds(userOpenId: string) {
+  const db = await getDb(); if (!db) return [];
+  const rows = await db.select({ laboratoryId: laboratoryMembers.laboratoryId }).from(laboratoryMembers).where(and(eq(laboratoryMembers.userOpenId, userOpenId), eq(laboratoryMembers.status, "active")));
+  return rows.map((row) => row.laboratoryId);
+}
 export async function appendAuditLog(input: InsertAuditLog) { const db = await getDb(); if (!db) return null; return db.insert(auditLogs).values(input); }
 export async function listAuditLogs(limit = 100) { const db = await getDb(); if (!db) return []; return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(Math.min(limit, 200)); }
 
