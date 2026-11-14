@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"لوحة التشغيل"},{"path":"/samples","title":"العينات"},{"path":"/calibration","title":"المعايرة"},{"path":"/settings","title":"الإعدادات"},{"path":"/sample/new","title":"إنشاء عينة"},{"path":"/sample/:id","title":"تقرير العينة"}]}
