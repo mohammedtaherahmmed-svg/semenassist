@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Compile vision Python modules
+        working-directory: server/vision
+        run: python -m py_compile analyze_video.py metrics.py test_metrics.py
       - name: Run pure kinematics unit tests
         working-directory: server/vision
         run: python -m unittest -v test_metrics.py
