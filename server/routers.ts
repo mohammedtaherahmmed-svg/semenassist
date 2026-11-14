@@ -96,7 +96,13 @@ export const appRouter = router({
       return { ...row, payload: JSON.parse(row.payload) };
     }),
     save: protectedProcedure.input(storedSampleInput).mutation(async ({ input, ctx }) => {
+      if (input.reviewStatus !== "pending") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "اعتماد العينة يتم من خلال إجراء المراجعة المخصص فقط" });
+      }
       const existing = await getSampleReport(input.sampleId);
+      if (existing?.reviewStatus === "reviewed") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن تعديل تقرير معتمد من خلال الحفظ العادي؛ استخدم مسار مراجعة مخولًا" });
+      }
       if (existing && ctx.user.role !== "admin") {
         if (existing.laboratoryId) {
           const membership = await getLaboratoryMembership(existing.laboratoryId, ctx.user.openId);
