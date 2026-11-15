@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/security-and-clinical-improvements
+      - feature/kalman-hungarian-tracking
   pull_request:
     branches:
       - main
