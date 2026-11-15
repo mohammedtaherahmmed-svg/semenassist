@@ -13,7 +13,7 @@ import sys
 from statistics import median
 
 from metrics import track_metrics as calculate_track_metrics
-from tracking import greedy_assign
+from tracking import KalmanCV2D, hungarian_assign
 
 import cv2
 import numpy as np
@@ -122,20 +122,26 @@ def morphology_from_components(components):
 
 
 def match_tracks(active, components, next_id, frame_index, max_distance=32, max_gap_frames=2):
-    """Update tracks with deterministic global one-to-one nearest-neighbour matches."""
+    """Predict track positions with a constant-velocity Kalman filter and assign globally."""
+    eligible_ids = []
+    predicted_positions = []
+    for track_id, track in active.items():
+        gap = frame_index - track["last_frame"]
+        if 1 <= gap <= max_gap_frames:
+            dt = frame_index - track.get("kalman_frame", track["last_frame"])
+            predicted_positions.append(track["kalman"].predict(float(max(1, dt))))
+            track["kalman_frame"] = frame_index
+            eligible_ids.append(track_id)
+
     points = [component["point"] for component in components]
-    eligible_ids = [
-        track_id for track_id, track in active.items()
-        if 1 <= frame_index - track["last_frame"] <= max_gap_frames
-    ]
-    track_positions = [active[track_id]["last"] for track_id in eligible_ids]
-    matches = greedy_assign(track_positions, points, max_distance)
+    matches = hungarian_assign(predicted_positions, points, max_distance)
     used_points = set()
     for track_index, point_index in matches:
         track_id = eligible_ids[track_index]
         track = active[track_id]
         component = components[point_index]
         distance = math.dist(track["last"], component["point"])
+        track["kalman"].update(component["point"])
         track["points"].append(component["point"])
         track["frame_indices"].append(frame_index)
         track["shape_samples"].append(component)
@@ -154,12 +160,13 @@ def match_tracks(active, components, next_id, frame_index, max_distance=32, max_
             "shape_samples": [component],
             "last": component["point"],
             "last_frame": frame_index,
+            "kalman": KalmanCV2D(component["point"]),
+            "kalman_frame": frame_index,
             "seen": 1,
             "distances": [],
         }
         next_id += 1
     return next_id
-
 
 def representative_shapes(tracks):
     """Use one median shape observation per track, not every repeated frame."""
@@ -274,7 +281,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
     return {
         "ok": True,
         "engine": "opencv-centroid-tracker",
-        "engineVersion": "0.5.0-timestamped-tracking",
+        "engineVersion": "0.6.0-kalman-hungarian",
         "framesAnalyzed": analyzed_frames,
         "frameCount": frame_count,
         "fps": round(fps, 2),

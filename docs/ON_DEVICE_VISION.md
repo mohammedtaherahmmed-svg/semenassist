@@ -80,3 +80,27 @@ These changes improve traceability and warn about visibly poor acquisition but d
 not establish analytical accuracy. Verification still requires real microscope
 videos, reference annotations, device testing, and comparison with a validated
 laboratory CASA method.
+
+
+## Motion tracking upgrade (0.3.0)
+
+The Android and Python tracking paths now predict centroid motion with a
+constant-velocity Kalman filter and solve frame-to-track association with a
+gated Hungarian assignment. Explicit unmatched assignments prevent forced
+matches when detections are outside the motion gate. The Kalman process and
+measurement noise values are initial engineering parameters and have not been
+fitted to a microscopy dataset.
+
+Synthetic tests cover globally optimal one-to-one assignment, unmatched
+detections, invalid inputs, and constant-velocity prediction. These tests do
+not measure identity-switch rate or tracking accuracy on real sperm videos.
+
+## Concentration interpretation remains restricted
+
+The current concentration estimate assumes the complete decoded image is the
+counting field, a uniform chamber depth, and no dilution correction. A real
+CASA concentration workflow must capture the chamber's effective counting
+area/geometry and dilution factor (and validate the sampled fields) before
+the numeric result can be interpreted as a laboratory concentration. Until
+those inputs and a reference-count comparison are implemented, treat the
+reported concentration as a provisional full-frame estimate only.
