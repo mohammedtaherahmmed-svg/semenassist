@@ -83,9 +83,11 @@ class SemenAssistVisionModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("SemenAssistVision")
 
-    AsyncFunction("analyzeVideo") { videoUri: String, micronsPerPixel: Double, chamberDepth: Double ->
+    AsyncFunction("analyzeVideo") { videoUri: String, micronsPerPixel: Double, chamberDepth: Double, countingAreaMm2: Double, dilutionFactor: Double ->
       require(micronsPerPixel.isFinite() && micronsPerPixel > 0.0) { "قيمة المعايرة غير صالحة." }
       require(chamberDepth.isFinite() && chamberDepth > 0.0) { "عمق الحجرة غير صالح." }
+      require(countingAreaMm2.isFinite() && countingAreaMm2 >= 0.0) { "مساحة العد غير صالحة." }
+      require(dilutionFactor.isFinite() && dilutionFactor >= 0.0) { "معامل التخفيف غير صالح." }
       val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
       val retriever = MediaMetadataRetriever()
       try {
@@ -93,14 +95,14 @@ class SemenAssistVisionModule : Module() {
         if (uri.scheme == "content") retriever.setDataSource(context, uri)
         else if (uri.scheme == "file") retriever.setDataSource(uri.path ?: error("مسار الفيديو غير صالح."))
         else error("يجب اختيار فيديو محفوظًا على الجهاز.")
-        analyze(retriever, micronsPerPixel, chamberDepth)
+        analyze(retriever, micronsPerPixel, chamberDepth, countingAreaMm2, dilutionFactor)
       } finally {
         retriever.release()
       }
     }
   }
 
-  private fun analyze(retriever: MediaMetadataRetriever, micronsPerPixel: Double, chamberDepth: Double): Map<String, Any> {
+  private fun analyze(retriever: MediaMetadataRetriever, micronsPerPixel: Double, chamberDepth: Double, countingAreaMm2: Double, dilutionFactor: Double): Map<String, Any> {
     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
     require(durationMs >= 1000L) { "مدة الفيديو غير كافية أو غير قابلة للقراءة." }
     val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
@@ -164,9 +166,12 @@ class SemenAssistVisionModule : Module() {
     val nonProgressive = max(0.0, totalMotility - progressiveMotility)
     val immotile = max(0.0, 100.0 - totalMotility)
     val averageCount = counts.average().takeIf { it.isFinite() } ?: 0.0
-    val volumeUm3 = sourceWidth * sourceHeight * micronsPerPixel * micronsPerPixel * chamberDepth
-    val volumeMl = volumeUm3 / 1.0e12
-    val concentration = if (volumeMl > 0) averageCount / volumeMl / 1.0e6 else 0.0
+    // Provisional field-occupancy estimate; never infer an area from video pixels.
+    val concentrationInputsValid = countingAreaMm2 > 0.0 && dilutionFactor > 0.0
+    val countingVolumeMl = countingAreaMm2 * chamberDepth / 1.0e6
+    val concentration = if (concentrationInputsValid && countingVolumeMl > 0.0) {
+      averageCount * dilutionFactor / countingVolumeMl / 1.0e6
+    } else 0.0
 
     val meanBrightness = frameQualities.map { it.meanBrightness }.average()
     val contrastStdDev = frameQualities.map { it.contrastStdDev }.average()
@@ -195,13 +200,16 @@ class SemenAssistVisionModule : Module() {
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.4.0-ground-truth-timing",
+      "engineVersion" to "0.5.0-casa-validation-export",
       "framesAnalyzed" to decodedSlots.size, "frameCount" to sourceFrameCount,
       "fps" to fps, "fpsSource" to fpsSource, "sampleRateHz" to sampleRate,
       "width" to sourceWidth, "height" to sourceHeight,
       "durationSec" to durationSec, "analyzedDurationSec" to analyzedDurationSec,
       "coveragePct" to coveragePct, "objectsDetected" to validTracks.size,
       "averageObjectsPerFrame" to averageCount, "concentration" to concentration,
+      "concentrationStatus" to if (concentrationInputsValid) "provisional-counting-area-estimate" else "not-calculated-missing-counting-area-or-dilution",
+      "countingAreaMm2" to countingAreaMm2, "dilutionFactor" to dilutionFactor,
+      "countingVolumeMl" to if (concentrationInputsValid) countingVolumeMl else 0.0,
       "totalMotility" to totalMotility, "progressiveMotility" to progressiveMotility,
       "nonProgressiveMotility" to nonProgressive, "immotile" to immotile,
       "confidence" to (quality / 100.0), "qualityScore" to quality,
@@ -221,6 +229,26 @@ class SemenAssistVisionModule : Module() {
       "coefficientOfVariation" to countCv,
       "kinematics" to mapOf("vcl" to avg("vcl"), "vsl" to avg("vsl"), "vap" to avg("vap"),
         "lin" to avg("lin"), "str" to avg("str"), "wob" to avg("wob"), "alh" to avg("alh"), "bcf" to 0.0),
+      "trackObservations" to tracks.flatMapIndexed { trackIndex, track ->
+        track.points.mapIndexed { pointIndex, point ->
+          mapOf(
+            "trackId" to (trackIndex + 1),
+            "sampleSlot" to track.frameIndices[pointIndex],
+            "timeSec" to (track.frameIndices[pointIndex] / sampleRate),
+            "xPx" to (point.x / sourceScale),
+            "yPx" to (point.y / sourceScale)
+          )
+        }
+      },
+      "trackingDiagnostics" to mapOf(
+        "totalTracksCreated" to tracks.size,
+        "validTracks" to validTracks.size,
+        "minimumTrackLength" to 3,
+        "maxGapSamples" to 2,
+        "identitySwitches" to null,
+        "fragmentation" to null,
+        "note" to "Identity switches and fragmentation require annotated ground truth."
+      ),
       "morphology" to mapOf("method" to "not-assessed-on-device", "totalExamined" to 0,
         "normalForms" to 0, "roundHeads" to 0, "elongatedHeads" to 0, "irregularHeads" to 0,
         "coiledTails" to 0, "bentTails" to 0, "doubleTails" to 0, "acrosomeAbnormal" to 0,
