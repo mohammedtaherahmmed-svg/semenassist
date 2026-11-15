@@ -34,6 +34,19 @@ class GroundTruthBenchmarkTests(unittest.TestCase):
         self.assertEqual(result["id_switches"], 1)
         self.assertLess(result["idf1"], 1.0)
 
+    def test_identity_switch_and_fragmentation_are_reported(self):
+        truth = [{"frame": f, "cell_id": 1, "x_px": float(f), "y_px": 0.0} for f in range(5)]
+        predictions = [
+            {"frame": 0, "track_id": 1, "x_px": 0.0, "y_px": 0.0},
+            {"frame": 1, "track_id": 1, "x_px": 1.0, "y_px": 0.0},
+            {"frame": 3, "track_id": 2, "x_px": 3.0, "y_px": 0.0},
+            {"frame": 4, "track_id": 2, "x_px": 4.0, "y_px": 0.0},
+        ]
+        result = evaluate_tracking(truth, predictions, tolerance_px=2)
+        self.assertEqual(result["id_switches"], 1)
+        self.assertEqual(result["fragmentation"], 1)
+        self.assertLess(result["idf1"], 1.0)
+
     def test_missing_and_false_detections_affect_precision_and_recall(self):
         truth = [
             {"frame": 0, "cell_id": 1, "x_px": 0, "y_px": 0},
