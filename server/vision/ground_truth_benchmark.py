@@ -13,7 +13,6 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from analyze_video import analyze
 from metrics import track_metrics
 from tracking import hungarian_assign
 
@@ -155,6 +154,8 @@ def main() -> None:
     parser.add_argument("--tolerance-px", type=float, default=12.0)
     parser.add_argument("--output", type=Path, default=Path("ground-truth-benchmark.json"))
     args = parser.parse_args()
+
+    from analyze_video import analyze  # Keep metric unit tests independent of OpenCV.
 
     truth = load_ground_truth(args.ground_truth_csv)
     analysis = analyze(str(args.video), args.microns_per_pixel, args.chamber_depth, include_tracks=True)
