@@ -11,6 +11,7 @@ on:
       - feature/security-and-clinical-improvements
       - feature/android-vision-timestamp-accuracy
       - feature/casa-validation-baseline
+      - feature/kalman-hungarian-tracking
 
 permissions:
   contents: read
