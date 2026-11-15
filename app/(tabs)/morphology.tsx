@@ -48,6 +48,8 @@ export default function MorphologyScreen() {
   const [reviewMode, setReviewMode] = useState<"primary" | "second">("primary");
   const [maskRegion, setMaskRegion] = useState<MaskRegion>("head");
   const [maskPoints, setMaskPoints] = useState<{x:number;y:number}[]>([]);
+  const [maskDrafts, setMaskDrafts] = useState<ExpertMask[]>([]);
+  const [canvasWidth, setCanvasWidth] = useState(VIEW_W);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => setRecords(await loadMorphologyImages()), []);
@@ -85,13 +87,13 @@ export default function MorphologyScreen() {
 
   function resetLabelForm() {
     setHeadShape("not-assessable"); setTailStatus("not-assessable");
-    setOverlap(false); setDebris(false); setMaskPoints([]);
+    setOverlap(false); setDebris(false); setMaskPoints([]); setMaskDrafts([]);
   }
 
   async function savePrimaryObject(record: MorphologyImageRecord) {
     const annotation: MorphologyObjectAnnotation = {
       objectId: `OBJ-${record.objects.length + 1}`, headShape, tailStatus, overlap, debris,
-      masks: maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: reviewerId.trim() }] : [],
+      masks: [...maskDrafts, ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: reviewerId.trim() }] : [])],
       annotatedAt: new Date().toISOString(), reviewerId: reviewerId.trim(),
     };
     const next = await updateMorphologyImage({ ...record, objects: [...record.objects, annotation] });
@@ -107,7 +109,7 @@ export default function MorphologyScreen() {
     }
     const secondReview = {
       reviewerId: record.secondReviewerId, headShape, tailStatus, overlap, debris,
-      masks: maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: record.secondReviewerId }] : [],
+      masks: [...maskDrafts, ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: record.secondReviewerId }] : [])],
       reviewedAt: new Date().toISOString(),
     };
     const objects = record.objects.map((item) => item.objectId === selectedObjectId ? { ...item, secondReview } : item);
@@ -217,20 +219,34 @@ export default function MorphologyScreen() {
               </View>
               <Text style={styles.label}>تحديد قناع الجزء (ارسم 3 نقاط أو أكثر)</Text>
               <View style={styles.chipWrap}>{MASK_REGIONS.map((item) => <Choice key={item.value} label={item.label} active={maskRegion === item.value} onPress={() => { setMaskRegion(item.value); setMaskPoints([]); }} />)}</View>
-              <View style={styles.maskCanvas} onStartShouldSetResponder={() => true} onResponderRelease={(event) => {
-                const x = Math.max(0, Math.min(1, event.nativeEvent.locationX / VIEW_W));
+              <View style={styles.maskCanvas} onLayout={(event) => setCanvasWidth(event.nativeEvent.layout.width)} onStartShouldSetResponder={() => true} onResponderRelease={(event) => {
+                const x = Math.max(0, Math.min(1, event.nativeEvent.locationX / canvasWidth));
                 const y = Math.max(0, Math.min(1, event.nativeEvent.locationY / VIEW_H));
                 setMaskPoints((points) => [...points, { x, y }]);
               }}>
-                <Image source={{ uri: selected.uri }} style={StyleSheet.absoluteFill} resizeMode="stretch" />
-                <Svg width="100%" height="100%" viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} preserveAspectRatio="none">
-                  {maskPoints.length >= 3 ? <Polygon points={maskPoints.map((p) => `${p.x*VIEW_W},${p.y*VIEW_H}`).join(" ")} fill="rgba(0,160,140,0.18)" stroke="#00A08C" strokeWidth="2" /> : null}
-                  {maskPoints.map((p, i) => <Circle key={i} cx={p.x*VIEW_W} cy={p.y*VIEW_H} r="4" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1" />)}
+                <Image source={{ uri: selected.uri }} style={StyleSheet.absoluteFill} resizeMode="stretch" onLoad={(event) => {
+                  const { width, height } = event.nativeEvent.source;
+                  if (width > 0 && height > 0 && (selected.imageWidthPx !== width || selected.imageHeightPx !== height)) {
+                    updateMorphologyImage({ ...selected, imageWidthPx: width, imageHeightPx: height }).then(setRecords).catch(() => undefined);
+                  }
+                }} />
+                <Svg width="100%" height="100%" viewBox={\`0 0 \${canvasWidth} \${VIEW_H}\`} preserveAspectRatio="none">
+                  {maskDrafts.map((mask, index) => <Polygon key={index} points={mask.points.map((p) => \`\${p.x*canvasWidth},\${p.y*VIEW_H}\`).join(" ")} fill="rgba(16,130,170,0.14)" stroke="#1682AA" strokeWidth="2" />)}
+                  {maskPoints.length >= 3 ? <Polygon points={maskPoints.map((p) => \`\${p.x*canvasWidth},\${p.y*VIEW_H}\`).join(" ")} fill="rgba(0,160,140,0.18)" stroke="#00A08C" strokeWidth="2" /> : null}
+                  {maskPoints.map((p, i) => <Circle key={i} cx={p.x*canvasWidth} cy={p.y*VIEW_H} r="4" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1" />)}
                 </Svg>
               </View>
               <Text style={styles.helper}>النقاط محفوظة كإحداثيات نسبية إلى الصورة المعروضة. وضع العرض يمدد الصورة لتسهيل رسم الحدود؛ راجع الأقنعة بصريًا قبل اعتمادها.</Text>
               <View style={styles.optionRow}>
-                <Choice label={`النقاط: ${maskPoints.length}`} active={false} onPress={() => {}} />
+                <Choice label={\`النقاط: \${maskPoints.length}\`} active={false} onPress={() => {}} />
+                <Choice label={\`أقنعة جاهزة: \${maskDrafts.length}\`} active={false} onPress={() => {}} />
+                <Choice label="اعتماد القناع الحالي" active={false} onPress={() => {
+                  if (maskPoints.length < 3) { Alert.alert("نقاط غير كافية", "أضف ثلاث نقاط على الأقل لتكوين قناع."); return; }
+                  const reviewer = reviewMode === "primary" ? reviewerId.trim() : (selected.secondReviewerId ?? "");
+                  if (!reviewer) { Alert.alert("المراجع غير محدد", "أدخل معرف المراجع قبل حفظ القناع."); return; }
+                  setMaskDrafts((items) => [...items, { region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: reviewer }]);
+                  setMaskPoints([]);
+                }} />
                 <Choice label="مسح النقاط" active={false} onPress={() => setMaskPoints([])} />
               </View>
               {reviewMode === "primary" ? (
