@@ -118,16 +118,31 @@ export default function MorphologyScreen() {
   }
 
   async function adjudicate(record: MorphologyImageRecord) {
-    const hasSecond = record.objects.some((item) => Boolean(item.secondReview));
-    if (!hasSecond) { Alert.alert("لا توجد مراجعة ثانية", "أضف مراجعة مستقلة لجسم واحد على الأقل أولًا."); return; }
-    const unresolved = record.objects.some((item) => {
-      if (!item.secondReview) return true;
-      return item.headShape !== item.secondReview.headShape || item.tailStatus !== item.secondReview.tailStatus ||
-        item.overlap !== item.secondReview.overlap || item.debris !== item.secondReview.debris;
-    });
-    const next = await updateMorphologyImage({ ...record, adjudicationStatus: unresolved ? "unresolved" : "adjudicated" });
-    setRecords(next);
-    Alert.alert(unresolved ? "توجد اختلافات" : "تطابق الوسوم", unresolved ? "لم تُحسم جميع الأجسام. راجع الاختلافات يدويًا؛ لم يتم فرض تصنيف تلقائي." : "تطابقت الوسوم الأساسية للأجسام التي تمت مراجعتها مرتين.");
+    const missingReview = record.objects.some((item) => !item.secondReview);
+    const disagreements = record.objects.filter((item) => item.secondReview && (
+      item.headShape !== item.secondReview.headShape || item.tailStatus !== item.secondReview.tailStatus ||
+      item.overlap !== item.secondReview.overlap || item.debris !== item.secondReview.debris
+    ));
+    if (missingReview || !record.objects.length) {
+      Alert.alert("المراجعة غير مكتملة", "يجب إضافة مراجعة ثانية مستقلة لكل جسم قبل طلب اعتماد المجموعة.");
+      return;
+    }
+    if (disagreements.length) {
+      Alert.alert("اختلافات تحتاج حسمًا", `يوجد اختلاف في ${disagreements.length} جسم. راجع الوسوم وسجل مراجعة ثانية مصححة قبل الاعتماد.`);
+      const next = await updateMorphologyImage({ ...record, adjudicationStatus: "unresolved" });
+      setRecords(next);
+      return;
+    }
+    Alert.alert(
+      "تأكيد الاعتماد البشري",
+      "تطابقت الوسوم الوصفية للمراجعين. هل راجعت الأقنعة بصريًا وتؤكد اعتماد مجموعة الصور؟ هذا التأكيد مسؤولية الخبير وليس حكمًا آليًا على الجودة.",
+      [
+        { text: "إلغاء", style: "cancel" },
+        { text: "تأكيد الاعتماد", onPress: () => {
+          updateMorphologyImage({ ...record, adjudicationStatus: "adjudicated" }).then(setRecords).catch((error) => Alert.alert("تعذر الحفظ", String(error)));
+        } },
+      ],
+    );
   }
 
   async function removeImage(id: string) {
@@ -257,7 +272,7 @@ export default function MorphologyScreen() {
               {selected.objects.map((item) => <View key={item.objectId} style={styles.annotationRow}>
                 <Pressable onPress={() => setSelectedObjectId(item.objectId)}><Text style={styles.annotationText}>{item.objectId} · الرأس: {HEAD_OPTIONS.find((o) => o.value === item.headShape)?.label} · الذيل: {TAIL_OPTIONS.find((o) => o.value === item.tailStatus)?.label} · أقنعة: {item.masks.length} · مراجعة ثانية: {item.secondReview ? "نعم" : "لا"}</Text></Pressable>
               </View>)}
-              <PrimaryButton label="فحص اتفاق المراجعين" icon="verified" onPress={() => adjudicate(selected)} />
+              <PrimaryButton label="مراجعة الاختلافات وطلب الاعتماد البشري" icon="verified" onPress={() => adjudicate(selected)} />
               <Text style={styles.helper}>يتم اعتبار المجموعة متفقًا عليها فقط إذا تمت مراجعة كل جسم مرتين وتطابقت الوسوم الأساسية. الاختلافات لا تُحسم آليًا.</Text>
             </View>
           </>
