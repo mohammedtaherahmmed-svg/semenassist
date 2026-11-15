@@ -179,7 +179,7 @@ def representative_shapes(tracks):
     return representatives
 
 
-def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False):
+def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counting_area_mm2=0.0, dilution_factor=0.0):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         fail("تعذر فتح ملف الفيديو")
@@ -224,9 +224,15 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False):
     progressive = [track for track, metric in zip(tracks, metrics) if metric["vsl"] >= 1.5 and metric["lin"] >= 0.45]
     avg_count = float(np.mean(counts)) if counts else 0.0
     count_cv = float(np.std(counts) / avg_count) if avg_count else 1.0
-    volume_um3 = width * height * (microns_per_pixel ** 2) * chamber_depth
-    volume_ml = volume_um3 / 1_000_000_000_000
-    concentration = avg_count / volume_ml if volume_ml > 0 else 0.0
+    concentration_inputs_valid = (
+        math.isfinite(counting_area_mm2) and counting_area_mm2 > 0
+        and math.isfinite(dilution_factor) and dilution_factor > 0
+    )
+    counting_volume_ml = counting_area_mm2 * chamber_depth / 1_000_000
+    concentration = (
+        avg_count * dilution_factor / counting_volume_ml / 1_000_000
+        if concentration_inputs_valid and counting_volume_ml > 0 else 0.0
+    )
     analyzed_frames = len(counts)
     analyzed_duration = (analyzed_source_frames[-1] / fps) if analyzed_source_frames and fps > 0 else 0
     total_motility = (len(moving) / len(tracks) * 100) if tracks else 0.0
@@ -292,7 +298,11 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False):
         "coveragePct": round(min(100.0, (analyzed_duration / duration) * 100) if duration else 0, 1),
         "objectsDetected": len(tracks),
         "averageObjectsPerFrame": round(avg_count, 2),
-        "concentration": round(concentration / 1_000_000, 2),
+        "concentration": round(concentration, 4),
+        "concentrationStatus": "provisional-counting-area-estimate" if concentration_inputs_valid else "not-calculated-missing-counting-area-or-dilution",
+        "countingAreaMm2": counting_area_mm2,
+        "dilutionFactor": dilution_factor,
+        "countingVolumeMl": counting_volume_ml if concentration_inputs_valid else None,
         "totalMotility": round(total_motility, 2),
         "progressiveMotility": round(progressive_motility, 2),
         "nonProgressiveMotility": round(non_progressive, 2),
@@ -310,6 +320,7 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False):
         result["trackObservations"] = [
             {
                 "frame": frame_index,
+                "timeSec": frame_index / fps if fps > 0 else None,
                 "track_id": track_id,
                 "x_px": point[0],
                 "y_px": point[1],
