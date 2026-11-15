@@ -266,6 +266,9 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
     defect_count = morphology_totals["irregularHeads"] + morphology_totals["coiledTails"] + morphology_totals["bentTails"] + morphology_totals["doubleTails"] + morphology_totals["acrosomeAbnormal"] + morphology_totals["midpieceDefects"]
     morphology = {
         "method": "opencv-track-median-shape-proxy-v2",
+        "status": "research-only-shape-proxy",
+        "clinicalValidity": False,
+        "notKrugerAssessment": True,
         "totalExamined": morphology_total,
         "normalForms": morphology_totals["normalForms"],
         "roundHeads": morphology_totals["roundHeads"],
@@ -281,7 +284,7 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
         "automaticConfidence": round(morphology_confidence, 2),
         "confidenceInterpretation": "heuristic shape-consistency proxy; not a calibrated probability",
         "uniqueTrackedObjects": len(morphology_observations),
-        "krugerScreening": {"normalPercent": round(morphology_totals["normalForms"] / morphology_total * 100, 2) if morphology_total else 0, "abnormalPercent": round(abnormal_forms / morphology_total * 100, 2) if morphology_total else 0, "thresholdPercent": 4.0, "status": "screening-only"},
+        "shapeProxyNormalPercent": round(morphology_totals["normalForms"] / morphology_total * 100, 2) if morphology_total else 0,
         "automaticLimitations": ["التصنيف الحالي heuristic من شكل الكونتور ولا يساوي نموذجًا مدربًا أو اعتماد Kruger.", "الأكروسوم والقطعة الوسطى والذيل تُقدّر من هندسة الجسم المتصل وقد تتأثر بالإضاءة والتداخل.", "يجب اعتماد العدد النهائي بعد مراجعة صورة صبغة/تكبير مناسب بواسطة فني أو مشرف."],
     }
     result = {
