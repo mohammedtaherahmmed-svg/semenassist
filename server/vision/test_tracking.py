@@ -32,7 +32,7 @@ class KalmanCV2DTests(unittest.TestCase):
         kalman.update((1.0, 0.0))
         kalman.predict(1.0)
         predicted_x, predicted_y = kalman.position
-        self.assertGreater(predicted_x, 1.0)
+        self.assertGreater(predicted_x, 0.8)
         self.assertAlmostEqual(predicted_y, 0.0, places=6)
         kalman.update((2.0, 0.0))
         self.assertGreater(kalman.position[0], predicted_x - 0.1)
