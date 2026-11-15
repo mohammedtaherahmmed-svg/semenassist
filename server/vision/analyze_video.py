@@ -13,6 +13,7 @@ import sys
 from statistics import median
 
 from metrics import track_metrics as calculate_track_metrics
+from concentration import concentration_million_per_ml
 from tracking import KalmanCV2D, hungarian_assign
 
 import cv2
@@ -229,10 +230,7 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
         and math.isfinite(dilution_factor) and dilution_factor > 0
     )
     counting_volume_ml = counting_area_mm2 * chamber_depth / 1_000_000
-    concentration = (
-        avg_count * dilution_factor / counting_volume_ml / 1_000_000
-        if concentration_inputs_valid and counting_volume_ml > 0 else 0.0
-    )
+    concentration = concentration_million_per_ml(avg_count, counting_area_mm2, chamber_depth, dilution_factor) if concentration_inputs_valid else 0.0
     analyzed_frames = len(counts)
     analyzed_duration = (analyzed_source_frames[-1] / fps) if analyzed_source_frames and fps > 0 else 0
     total_motility = (len(moving) / len(tracks) * 100) if tracks else 0.0
