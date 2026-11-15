@@ -10,6 +10,8 @@ export type VisionAnalysis = {
   framesAnalyzed: number;
   frameCount: number;
   fps: number;
+  fpsSource: string;
+  sampleRateHz: number;
   width: number;
   height: number;
   durationSec: number;
