@@ -55,6 +55,7 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
         })
 
     matched = 0
+    localization_errors = []
     gt_total = pred_total = 0
     overlap: dict[tuple[int, int], int] = defaultdict(int)
     identity_history: dict[int, list[tuple[int, int]]] = defaultdict(list)
@@ -71,6 +72,7 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
         matched += len(pairs)
         for truth_index, pred_index in pairs:
             gt, pred = truth[truth_index], predicted[pred_index]
+            localization_errors.append(((gt["x_px"] - pred["x_px"]) ** 2 + (gt["y_px"] - pred["y_px"]) ** 2) ** 0.5)
             overlap[(gt["cell_id"], pred["track_id"])] += 1
             identity_history[gt["cell_id"]].append((frame, pred["track_id"]))
             matched_points[gt["cell_id"]].append((
@@ -89,6 +91,20 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
     id_false_negative = gt_total - id_true_positive
     idf1_denominator = 2 * id_true_positive + id_false_positive + id_false_negative
     idf1 = 2 * id_true_positive / idf1_denominator if idf1_denominator else 0.0
+
+    fragmentation = 0
+    for cell_id in gt_ids:
+        matched_frames = {frame for frame, _ in identity_history.get(cell_id, [])}
+        ordered_gt_frames = sorted(frame for frame, rows in gt_by_frame.items() if any(row["cell_id"] == cell_id for row in rows))
+        seen_match = False
+        previous_matched = False
+        for frame in ordered_gt_frames:
+            is_matched = frame in matched_frames
+            if is_matched and seen_match and not previous_matched:
+                fragmentation += 1
+            if is_matched:
+                seen_match = True
+            previous_matched = is_matched
 
     per_cell = []
     velocity_errors = defaultdict(list)
@@ -128,12 +144,44 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
         "recall": matched / gt_total if gt_total else 0.0,
         "id_switches": switches,
         "idf1": idf1,
+        "fragmentation": fragmentation,
+        "mean_localization_error_px": sum(localization_errors) / len(localization_errors) if localization_errors else None,
         "mean_absolute_velocity_error": {
             key: sum(values) / len(values) if values else None
             for key, values in velocity_errors.items()
         },
         "per_cell": per_cell,
     }
+
+
+def load_predictions(path: Path, ground_truth: list[dict], ground_truth_fps: float) -> list[dict]:
+    """Load either Python observations or Android-exported trackObservations JSON."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("trackObservations", payload) if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        raise ValueError("Prediction JSON must be a list or contain trackObservations")
+    gt_times = []
+    for row in ground_truth:
+        frame = int(row["frame"])
+        time_sec = float(row.get("time_sec") or frame / ground_truth_fps)
+        gt_times.append((time_sec, frame))
+    normalized = []
+    for row in rows:
+        time_sec = row.get("timeSec", row.get("time_sec"))
+        if time_sec is not None and gt_times:
+            nearest_time, nearest_frame = min(gt_times, key=lambda item: abs(item[0] - float(time_sec)))
+            if abs(nearest_time - float(time_sec)) > 0.5 / ground_truth_fps:
+                continue
+            frame = nearest_frame
+        else:
+            frame = int(row.get("frame", row.get("sampleSlot", 0)))
+        normalized.append({
+            "frame": frame,
+            "track_id": int(row.get("track_id", row.get("trackId"))),
+            "x_px": float(row.get("x_px", row.get("xPx"))),
+            "y_px": float(row.get("y_px", row.get("yPx"))),
+        })
+    return normalized
 
 
 def load_ground_truth(path: Path) -> list[dict]:
@@ -152,6 +200,8 @@ def main() -> None:
     parser.add_argument("--microns-per-pixel", type=float, default=0.5)
     parser.add_argument("--chamber-depth", type=float, default=20.0)
     parser.add_argument("--tolerance-px", type=float, default=12.0)
+    parser.add_argument("--ground-truth-fps", type=float, default=50.0)
+    parser.add_argument("--predictions-json", type=Path, help="Optional exported Android/Python trackObservations JSON")
     parser.add_argument("--output", type=Path, default=Path("ground-truth-benchmark.json"))
     args = parser.parse_args()
 
@@ -159,12 +209,14 @@ def main() -> None:
 
     truth = load_ground_truth(args.ground_truth_csv)
     analysis = analyze(str(args.video), args.microns_per_pixel, args.chamber_depth, include_tracks=True)
-    evaluation = evaluate_tracking(truth, analysis["trackObservations"], args.tolerance_px)
+    predictions = load_predictions(args.predictions_json, truth, args.ground_truth_fps) if args.predictions_json else analysis["trackObservations"]
+    evaluation = evaluate_tracking(truth, predictions, args.tolerance_px)
     report = {
         "benchmark": "SemenAssist synthetic CASA ground-truth comparison",
-        "scope": "Python OpenCV pipeline only; not Android Kotlin engine validation",
+        "scope": "Python OpenCV or supplied Android track export, depending on --predictions-json",
         "synthetic_ground_truth": True,
         "clinical_validity": False,
+        "prediction_source": "android-export" if args.predictions_json else "python-opencv",
         "analysis_metadata": {
             key: analysis.get(key) for key in (
                 "engineVersion", "frameCount", "fps", "framesAnalyzed",
