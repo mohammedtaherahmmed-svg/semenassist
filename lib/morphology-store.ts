@@ -19,6 +19,7 @@ export type MorphologyObjectAnnotation = {
   masks: ExpertMask[];
   annotatedAt: string;
   reviewerId: string;
+  secondReview?: { reviewerId: string; headShape: HeadShape; tailStatus: TailStatus; overlap: boolean; debris: boolean; masks: ExpertMask[]; reviewedAt: string };
 };
 
 export type MorphologyImageRecord = {
