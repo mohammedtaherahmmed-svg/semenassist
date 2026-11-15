@@ -55,6 +55,9 @@ export type SampleRecord = {
   processingLocation?: "on-device" | "server";
   objectsDetected?: number;
   fps?: number;
+  sourceFrameCount?: number;
+  fpsSource?: string;
+  sampleRateHz?: number;
   coefficientOfVariation?: number;
   qualityMetrics?: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
   kinematics?: {
