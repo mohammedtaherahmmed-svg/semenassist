@@ -35,7 +35,7 @@ def _maximum_overlap(overlap: dict[tuple[int, int], int], predicted_ids: list[in
     return max(dp.values(), default=0)
 
 
-def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], tolerance_px: float = 12.0) -> dict:
+def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], tolerance_px: float = 12.0, microns_per_pixel: float = 0.5, source_fps: float = 50.0) -> dict:
     """Frame-wise gated assignment plus global IDF1 and per-cell velocity error."""
     if tolerance_px <= 0:
         raise ValueError("tolerance_px must be positive")
@@ -117,8 +117,8 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
         frames = [row[0] for row in rows]
         truth_points = [(row[2], row[3]) for row in rows]
         predicted_points = [(row[4], row[5]) for row in rows]
-        truth_metrics = track_metrics(truth_points, frames, 0.5, 50.0)
-        predicted_metrics = track_metrics(predicted_points, frames, 0.5, 50.0)
+        truth_metrics = track_metrics(truth_points, frames, microns_per_pixel, source_fps)
+        predicted_metrics = track_metrics(predicted_points, frames, microns_per_pixel, source_fps)
         errors = {}
         for key in ("vcl", "vsl", "vap", "lin"):
             error = abs(predicted_metrics[key] - truth_metrics[key])
@@ -212,7 +212,7 @@ def main() -> None:
     truth = load_ground_truth(args.ground_truth_csv)
     analysis = analyze(str(args.video), args.microns_per_pixel, args.chamber_depth, include_tracks=True, counting_area_mm2=args.counting_area_mm2, dilution_factor=args.dilution_factor)
     predictions = load_predictions(args.predictions_json, truth, args.ground_truth_fps) if args.predictions_json else analysis["trackObservations"]
-    evaluation = evaluate_tracking(truth, predictions, args.tolerance_px)
+    evaluation = evaluate_tracking(truth, predictions, args.tolerance_px, args.microns_per_pixel, args.ground_truth_fps)
     report = {
         "benchmark": "SemenAssist synthetic CASA ground-truth comparison",
         "scope": "Python OpenCV or supplied Android track export, depending on --predictions-json",
