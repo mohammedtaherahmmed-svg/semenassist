@@ -251,6 +251,8 @@ const styles = StyleSheet.create({
   advancedHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   advancedTitle: { color: COLORS.navy, fontSize: 15, fontWeight: "800", textAlign: "right" },
   advancedBody: { color: COLORS.muted, fontSize: 11, lineHeight: 17, textAlign: "right", marginTop: 9 },
+  secondaryButton: { backgroundColor: "#EAF4F2", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14, alignItems: "center", marginTop: 12 },
+  secondaryButtonText: { color: COLORS.tealDark, fontSize: 12, fontWeight: "800", textAlign: "center" },
   advancedGrid: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginTop: 12 },
   advancedField: { flex: 1 },
   advancedInput: { height: 44, borderWidth: 1, borderColor: COLORS.line, borderRadius: 11, backgroundColor: COLORS.paper, color: COLORS.navy, paddingHorizontal: 9, fontSize: 13 },
