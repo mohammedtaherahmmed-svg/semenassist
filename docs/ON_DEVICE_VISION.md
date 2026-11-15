@@ -127,3 +127,16 @@ Example:
     python ground_truth_benchmark.py clip.mp4 annotations.csv --ground-truth-fps 50 --microns-per-pixel 0.5 --chamber-depth 20 --counting-area-mm2 AREA --dilution-factor FACTOR --output validation.json
 
 To score Android output, pass a JSON file containing the trackObservations array with --predictions-json android-tracks.json. CSV columns are frame,cell_id,x_px,y_px; optional time_sec supports timestamp alignment. This remains an engineering prototype, not clinical validation.
+
+## Morphology image workflow (research collection phase)
+
+The Android app now includes a separate Morphology tab for importing multiple microscope images and collecting structured, reviewer-entered object labels. Each record captures a pseudonymous sample ID, reviewer code, preparation state (stained/unstained/unknown), objective magnification, optional calibrated pixel size, microscope code, and per-object head-shape/tail-status plus overlap/debris flags.
+
+This is an image intake and manual annotation aid only:
+- It does not run an AI classifier, segmentation model, or automatic sperm detector.
+- A reviewer must visually identify each object before adding a label; the current UI does not draw head/tail masks or object bounding boxes.
+- The current image records are stored locally in AsyncStorage and refer to document-picker cache URIs. They are not yet a durable image archive or a training-ready dataset export; cache cleanup or app removal can invalidate image paths.
+- Do not enter patient names, dates of birth, or other direct identifiers. Use pseudonymous sample and reviewer codes and follow the laboratory's consent, access-control, retention, and de-identification procedures.
+- Labels are single-review entries. Adjudication by a second expert, inter-rater agreement, mask annotation, sample-level dataset splitting, and export/backup workflows remain future work.
+
+The existing `server/vision/datasets/morphology-annotation.schema.json` remains the stricter expert dataset contract for training/benchmark preparation. The new app workflow must not be represented as satisfying that contract until object masks, adjudication, durable image packaging, and a validated export pipeline are implemented.
