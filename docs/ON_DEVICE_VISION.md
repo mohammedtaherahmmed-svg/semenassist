@@ -104,3 +104,26 @@ area/geometry and dilution factor (and validate the sampled fields) before
 the numeric result can be interpreted as a laboratory concentration. Until
 those inputs and a reference-count comparison are implemented, treat the
 reported concentration as a provisional full-frame estimate only.
+
+## CASA complete validation foundation (0.5.0)
+
+### Android track export
+The Android module returns per-observation track data with persistent track ID, sample slot, elapsed seconds, and source-resolution pixel coordinates. The sample record keeps these observations and the report shows track counts and export size. Identity switches and fragmentation remain unavailable until tracks are compared with expert-annotated ground truth; they are not reported as zero by assumption.
+
+### Timing and kinematics
+The report separates source video FPS/frame count from sampled analysis rate. Track velocity uses elapsed time between original sample slots, preserving gaps. A 50 FPS synthetic fixture should report source metadata separately from its 4 Hz analysis sampling schedule.
+
+### Concentration
+A numeric concentration is withheld unless both effective counting area (mm²) and dilution factor are explicitly supplied. The estimate uses mean field count multiplied by dilution divided by area and depth, with unit conversion to million/mL. It remains a provisional field-occupancy estimate; chamber protocol, field sampling and reference count must be validated before laboratory interpretation. No area is inferred from video pixel dimensions.
+
+### Morphology preparation
+Android continues to mark morphology as not assessed on-device. The Python contour pipeline is explicitly labelled as a research-only shape proxy, and its Kruger-threshold interpretation has been removed. A JSON schema defines the expert annotation contract for head masks, tail masks, midpiece masks, preparation, pixel scale, adjudication, and sample-level dataset splits. A trained morphology model is not included because no expert-labelled dataset is available.
+
+### Scientific validation dashboard
+The sample report exposes source timing, sample rate, track counts, and exported observation count. The benchmark evaluator reports detection precision/recall, localization error, ID switches, IDF1, fragmentation, and per-cell VCL/VSL/VAP/LIN errors. These metrics require expert-annotated CSV data using the same coordinate/time basis.
+
+Example:
+    cd server/vision
+    python ground_truth_benchmark.py clip.mp4 annotations.csv --ground-truth-fps 50 --microns-per-pixel 0.5 --chamber-depth 20 --counting-area-mm2 AREA --dilution-factor FACTOR --output validation.json
+
+To score Android output, pass a JSON file containing the trackObservations array with --predictions-json android-tracks.json. CSV columns are frame,cell_id,x_px,y_px; optional time_sec supports timestamp alignment. This remains an engineering prototype, not clinical validation.
