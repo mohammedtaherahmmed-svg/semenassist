@@ -67,8 +67,8 @@ jobs:
       - name: Validate vision engine
         working-directory: server/vision
         run: |
-          python -m py_compile analyze_video.py metrics.py tracking.py test_metrics.py test_tracking.py
-          python -m unittest -v test_metrics.py test_tracking.py
+          python -m py_compile analyze_video.py concentration.py metrics.py tracking.py ground_truth_benchmark.py test_concentration.py test_metrics.py test_tracking.py test_ground_truth_benchmark.py
+          python -m unittest -v test_concentration.py test_metrics.py test_tracking.py test_ground_truth_benchmark.py
 
       - name: Generate native Android project
         run: pnpm exec expo prebuild --platform android --no-install --non-interactive
