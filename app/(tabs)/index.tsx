@@ -68,7 +68,7 @@ export default function HomeScreen() {
                 <View style={styles.recentIdRow}><Text style={styles.recentId}>{recent.id}</Text><MaterialIcons name="description" size={18} color={COLORS.tealDark} /></View>
               </View>
               <View style={styles.recentMetrics}>
-                <View><Text style={styles.recentValue}>{recent.concentration}</Text><Text style={styles.recentLabel}>مليون/مل تركيز</Text></View>
+                <View><Text style={styles.recentValue}>{recent.concentrationStatus === "not-calculated-missing-counting-area-or-dilution" ? "—" : recent.concentration}</Text><Text style={styles.recentLabel}>{recent.concentrationStatus === "not-calculated-missing-counting-area-or-dilution" ? "التركيز غير محسوب" : "مليون/مل تركيز"}</Text></View>
                 <View><Text style={styles.recentValue}>{recent.totalMotility}%</Text><Text style={styles.recentLabel}>إجمالي الحركة</Text></View>
                 <View><Text style={styles.recentValue}>{recent.qualityScore}%</Text><Text style={styles.recentLabel}>جودة البيانات</Text></View>
               </View>
