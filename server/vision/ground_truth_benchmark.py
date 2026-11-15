@@ -170,7 +170,7 @@ def load_predictions(path: Path, ground_truth: list[dict], ground_truth_fps: flo
         time_sec = row.get("timeSec", row.get("time_sec"))
         if time_sec is not None and gt_times:
             nearest_time, nearest_frame = min(gt_times, key=lambda item: abs(item[0] - float(time_sec)))
-            if abs(nearest_time - float(time_sec)) > 0.5 / ground_truth_fps:
+            if abs(nearest_time - float(time_sec)) > (0.5 / ground_truth_fps) + 1e-6:
                 continue
             frame = nearest_frame
         else:
@@ -199,6 +199,8 @@ def main() -> None:
     parser.add_argument("ground_truth_csv", type=Path)
     parser.add_argument("--microns-per-pixel", type=float, default=0.5)
     parser.add_argument("--chamber-depth", type=float, default=20.0)
+    parser.add_argument("--counting-area-mm2", type=float, default=0.0)
+    parser.add_argument("--dilution-factor", type=float, default=0.0)
     parser.add_argument("--tolerance-px", type=float, default=12.0)
     parser.add_argument("--ground-truth-fps", type=float, default=50.0)
     parser.add_argument("--predictions-json", type=Path, help="Optional exported Android/Python trackObservations JSON")
@@ -208,7 +210,7 @@ def main() -> None:
     from analyze_video import analyze  # Keep metric unit tests independent of OpenCV.
 
     truth = load_ground_truth(args.ground_truth_csv)
-    analysis = analyze(str(args.video), args.microns_per_pixel, args.chamber_depth, include_tracks=True)
+    analysis = analyze(str(args.video), args.microns_per_pixel, args.chamber_depth, include_tracks=True, counting_area_mm2=args.counting_area_mm2, dilution_factor=args.dilution_factor)
     predictions = load_predictions(args.predictions_json, truth, args.ground_truth_fps) if args.predictions_json else analysis["trackObservations"]
     evaluation = evaluate_tracking(truth, predictions, args.tolerance_px)
     report = {
@@ -220,7 +222,7 @@ def main() -> None:
         "analysis_metadata": {
             key: analysis.get(key) for key in (
                 "engineVersion", "frameCount", "fps", "framesAnalyzed",
-                "durationSec", "analyzedDurationSec", "width", "height", "kinematics"
+                "durationSec", "analyzedDurationSec", "width", "height", "kinematics", "concentration", "concentrationStatus"
             )
         },
         "evaluation": evaluation,
