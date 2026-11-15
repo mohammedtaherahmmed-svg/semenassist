@@ -179,7 +179,7 @@ def representative_shapes(tracks):
     return representatives
 
 
-def analyze(path, microns_per_pixel, chamber_depth):
+def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
         fail("تعذر فتح ملف الفيديو")
@@ -278,7 +278,7 @@ def analyze(path, microns_per_pixel, chamber_depth):
         "krugerScreening": {"normalPercent": round(morphology_totals["normalForms"] / morphology_total * 100, 2) if morphology_total else 0, "abnormalPercent": round(abnormal_forms / morphology_total * 100, 2) if morphology_total else 0, "thresholdPercent": 4.0, "status": "screening-only"},
         "automaticLimitations": ["التصنيف الحالي heuristic من شكل الكونتور ولا يساوي نموذجًا مدربًا أو اعتماد Kruger.", "الأكروسوم والقطعة الوسطى والذيل تُقدّر من هندسة الجسم المتصل وقد تتأثر بالإضاءة والتداخل.", "يجب اعتماد العدد النهائي بعد مراجعة صورة صبغة/تكبير مناسب بواسطة فني أو مشرف."],
     }
-    return {
+    result = {
         "ok": True,
         "engine": "opencv-centroid-tracker",
         "engineVersion": "0.6.0-kalman-hungarian",
@@ -306,6 +306,18 @@ def analyze(path, microns_per_pixel, chamber_depth):
         "morphology": morphology,
         "thresholds": {"minTrackPixels": 2, "maxMatchPixels": 32, "cvTarget": 0.1},
     }
+    if include_tracks:
+        result["trackObservations"] = [
+            {
+                "frame": frame_index,
+                "track_id": track_id,
+                "x_px": point[0],
+                "y_px": point[1],
+            }
+            for track_id, track in active.items()
+            for point, frame_index in zip(track["points"], track["frame_indices"])
+        ]
+    return result
 
 
 def main():
