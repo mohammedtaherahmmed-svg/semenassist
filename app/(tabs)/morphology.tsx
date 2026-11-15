@@ -230,16 +230,16 @@ export default function MorphologyScreen() {
                     updateMorphologyImage({ ...selected, imageWidthPx: width, imageHeightPx: height }).then(setRecords).catch(() => undefined);
                   }
                 }} />
-                <Svg width="100%" height="100%" viewBox={\`0 0 \${canvasWidth} \${VIEW_H}\`} preserveAspectRatio="none">
-                  {maskDrafts.map((mask, index) => <Polygon key={index} points={mask.points.map((p) => \`\${p.x*canvasWidth},\${p.y*VIEW_H}\`).join(" ")} fill="rgba(16,130,170,0.14)" stroke="#1682AA" strokeWidth="2" />)}
-                  {maskPoints.length >= 3 ? <Polygon points={maskPoints.map((p) => \`\${p.x*canvasWidth},\${p.y*VIEW_H}\`).join(" ")} fill="rgba(0,160,140,0.18)" stroke="#00A08C" strokeWidth="2" /> : null}
+                <Svg width="100%" height="100%" viewBox={`0 0 ${canvasWidth} ${VIEW_H}`} preserveAspectRatio="none">
+                  {maskDrafts.map((mask, index) => <Polygon key={index} points={mask.points.map((p) => `${p.x*canvasWidth},${p.y*VIEW_H}`).join(" ")} fill="rgba(16,130,170,0.14)" stroke="#1682AA" strokeWidth="2" />)}
+                  {maskPoints.length >= 3 ? <Polygon points={maskPoints.map((p) => `${p.x*canvasWidth},${p.y*VIEW_H}`).join(" ")} fill="rgba(0,160,140,0.18)" stroke="#00A08C" strokeWidth="2" /> : null}
                   {maskPoints.map((p, i) => <Circle key={i} cx={p.x*canvasWidth} cy={p.y*VIEW_H} r="4" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1" />)}
                 </Svg>
               </View>
               <Text style={styles.helper}>النقاط محفوظة كإحداثيات نسبية إلى الصورة المعروضة. وضع العرض يمدد الصورة لتسهيل رسم الحدود؛ راجع الأقنعة بصريًا قبل اعتمادها.</Text>
               <View style={styles.optionRow}>
-                <Choice label={\`النقاط: \${maskPoints.length}\`} active={false} onPress={() => {}} />
-                <Choice label={\`أقنعة جاهزة: \${maskDrafts.length}\`} active={false} onPress={() => {}} />
+                <Choice label={`النقاط: ${maskPoints.length}`} active={false} onPress={() => {}} />
+                <Choice label={`أقنعة جاهزة: ${maskDrafts.length}`} active={false} onPress={() => {}} />
                 <Choice label="اعتماد القناع الحالي" active={false} onPress={() => {
                   if (maskPoints.length < 3) { Alert.alert("نقاط غير كافية", "أضف ثلاث نقاط على الأقل لتكوين قناع."); return; }
                   const reviewer = reviewMode === "primary" ? reviewerId.trim() : (selected.secondReviewerId ?? "");
