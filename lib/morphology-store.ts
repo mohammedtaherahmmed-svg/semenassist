@@ -140,7 +140,7 @@ export async function exportMorphologyDataset(records: MorphologyImageRecord[]) 
     split_policy: "assign_by_pseudonymous_sample_id_only_to_prevent_sample_leakage",
     images: records.map((record) => ({
       sample_id: record.pseudonymousSampleId,
-      image_path: `images/${safeFileName(record.fileName)}`,
+      image_path: `images/${safeFileName(record.pseudonymousSampleId)}_${safeFileName(record.fileName)}`,
       preparation: record.preparation,
       pixel_size_um: record.pixelSizeUm,
       microscope_id: record.microscopeId,
@@ -173,5 +173,10 @@ export async function exportMorphologyDataset(records: MorphologyImageRecord[]) 
 
 export async function shareMorphologyImage(record: MorphologyImageRecord) {
   if (!(await Sharing.isAvailableAsync())) throw new Error("مشاركة الملفات غير متاحة على هذا الجهاز.");
-  await Sharing.shareAsync(record.uri, { mimeType: "image/*", dialogTitle: record.fileName });
+  const imageExportDir = EXPORT_DIR + "images/";
+  await FileSystem.makeDirectoryAsync(imageExportDir, { intermediates: true }).catch(() => undefined);
+  const exportUri = imageExportDir + `${safeFileName(record.pseudonymousSampleId)}_${safeFileName(record.fileName)}`;
+  await FileSystem.deleteAsync(exportUri, { idempotent: true }).catch(() => undefined);
+  await FileSystem.copyAsync({ from: record.uri, to: exportUri });
+  await Sharing.shareAsync(exportUri, { mimeType: "image/*", dialogTitle: record.fileName });
 }
