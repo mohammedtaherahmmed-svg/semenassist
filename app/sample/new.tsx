@@ -94,6 +94,9 @@ export default function NewSampleScreen() {
       coveragePct: visionResult.coveragePct,
       videoDurationSec: visionResult.durationSec,
       concentration: visionResult.concentration,
+      concentrationStatus: visionResult.concentrationStatus,
+      trackObservations: visionResult.trackObservations,
+      trackingDiagnostics: visionResult.trackingDiagnostics,
       progressiveMotility: visionResult.progressiveMotility,
       nonProgressiveMotility: visionResult.nonProgressiveMotility,
       immotile: visionResult.immotile,
@@ -117,6 +120,8 @@ export default function NewSampleScreen() {
       calibration: {
         micronsPerPixel: calibration.micronsPerPixel,
         chamberDepth: calibration.chamberDepth,
+        countingAreaMm2: calibration.countingAreaMm2,
+        dilutionFactor: calibration.dilutionFactor,
         calibratedAt: calibration.calibratedAt,
       },
     };

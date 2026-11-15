@@ -1,6 +1,8 @@
 export type CalibrationInput = {
   micronsPerPixel: number;
   chamberDepth: number;
+  countingAreaMm2?: number;
+  dilutionFactor?: number;
   setupLabel: string;
   calibratedAt?: string;
 };
@@ -17,6 +19,14 @@ export function validateCalibration(input: CalibrationInput): string | null {
   }
   if (!Number.isFinite(input.chamberDepth) || input.chamberDepth <= 0) {
     return "أدخل عمق حجرة موجبًا وصحيحًا.";
+  }
+  const area = input.countingAreaMm2 ?? 0;
+  const dilution = input.dilutionFactor ?? 0;
+  if (!Number.isFinite(area) || area < 0 || !Number.isFinite(dilution) || dilution < 0) {
+    return "مساحة العد ومعامل التخفيف يجب أن يكونا صفرًا أو قيمتين موجبتين.";
+  }
+  if ((area > 0) !== (dilution > 0)) {
+    return "أدخل مساحة العد ومعامل التخفيف معًا، أو اتركهما فارغين.";
   }
   if (!input.setupLabel.trim()) return "أدخل اسمًا لإعداد الميكروسكوب.";
   if (input.calibratedAt && !Number.isFinite(Date.parse(input.calibratedAt))) {

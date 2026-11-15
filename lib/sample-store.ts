@@ -9,6 +9,8 @@ const CALIBRATION_KEY = "semenassist.calibration.v1";
 export type CalibrationRecord = {
   micronsPerPixel: number;
   chamberDepth: number;
+  countingAreaMm2?: number;
+  dilutionFactor?: number;
   calibratedAt: string;
   setupLabel: string;
 };

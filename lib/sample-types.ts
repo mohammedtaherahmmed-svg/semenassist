@@ -10,7 +10,7 @@ export type AiInterpretation = {
 };
 
 export type MorphologyRecord = {
-  method: "opencv-contour-screening" | "opencv-heuristic-morphology-v1" | "manual" | "hybrid" | "not-assessed-on-device";
+  method: "opencv-contour-screening" | "opencv-heuristic-morphology-v1" | "opencv-track-median-shape-proxy-v2" | "manual" | "hybrid" | "not-assessed-on-device";
   totalExamined: number;
   normalForms: number;
   roundHeads: number;
@@ -58,6 +58,9 @@ export type SampleRecord = {
   sourceFrameCount?: number;
   fpsSource?: string;
   sampleRateHz?: number;
+  concentrationStatus?: string;
+  trackObservations?: Array<{ trackId: number; sampleSlot: number; timeSec: number; xPx: number; yPx: number }>;
+  trackingDiagnostics?: { totalTracksCreated: number; validTracks: number; minimumTrackLength: number; maxGapSamples: number; identitySwitches: number | null; fragmentation: number | null; note: string };
   coefficientOfVariation?: number;
   qualityMetrics?: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
   kinematics?: {
@@ -83,6 +86,8 @@ export type SampleRecord = {
   calibration: {
     micronsPerPixel: number;
     chamberDepth: number;
+    countingAreaMm2?: number;
+    dilutionFactor?: number;
     calibratedAt: string;
   };
   reviewStatus: ReviewStatus;

@@ -13,6 +13,8 @@ export default function CalibrationScreen() {
   const [calibration, setCalibration] = useState<CalibrationRecord | null>(null);
   const [microns, setMicrons] = useState("");
   const [depth, setDepth] = useState("20");
+  const [countingArea, setCountingArea] = useState("");
+  const [dilutionFactor, setDilutionFactor] = useState("");
   const [setupLabel, setSetupLabel] = useState("هاتف المختبر · عدسة 40x");
   const [referenceLength, setReferenceLength] = useState("10");
   const [measuredPixels, setMeasuredPixels] = useState("");
@@ -27,6 +29,8 @@ export default function CalibrationScreen() {
       if (value) {
         setMicrons(String(value.micronsPerPixel));
         setDepth(String(value.chamberDepth));
+        setCountingArea(value.countingAreaMm2 == null ? "" : String(value.countingAreaMm2));
+        setDilutionFactor(value.dilutionFactor == null ? "" : String(value.dilutionFactor));
         setSetupLabel(value.setupLabel);
       }
     });
@@ -44,9 +48,23 @@ export default function CalibrationScreen() {
   }
 
   async function handleSave() {
+    const areaValue = countingArea.trim() ? Number(countingArea.replace(",", ".")) : 0;
+    const dilutionValue = dilutionFactor.trim() ? Number(dilutionFactor.replace(",", ".")) : 0;
+    if ((areaValue > 0) !== (dilutionValue > 0)) {
+      setError("أدخل مساحة العد ومعامل التخفيف معًا، أو اتركهما فارغين لتعطيل حساب التركيز.");
+      setSaved(false);
+      return;
+    }
+    if (!Number.isFinite(areaValue) || areaValue < 0 || !Number.isFinite(dilutionValue) || dilutionValue < 0) {
+      setError("مساحة العد ومعامل التخفيف يجب أن يكونا قيمتين موجبتين.");
+      setSaved(false);
+      return;
+    }
     const record: CalibrationRecord = {
       micronsPerPixel: Number(microns.replace(",", ".")),
       chamberDepth: Number(depth.replace(",", ".")),
+      countingAreaMm2: areaValue > 0 ? areaValue : undefined,
+      dilutionFactor: dilutionValue > 0 ? dilutionValue : undefined,
       setupLabel,
       calibratedAt: new Date().toISOString(),
     };
@@ -67,6 +85,8 @@ export default function CalibrationScreen() {
     setCalibration(null);
     setMicrons("");
     setDepth("20");
+    setCountingArea("");
+    setDilutionFactor("");
     setError("");
     setSaved(false);
   }
@@ -95,6 +115,10 @@ export default function CalibrationScreen() {
     <View style={styles.formCard}>
       <Field label="ميكرومتر / بكسل" value={microns} onChangeText={setMicrons} hint="يُحسب من المرجع أعلاه" />
       <Field label="عمق الحجرة (µm)" value={depth} onChangeText={setDepth} hint="أدخل العمق الفعلي للحجرة" />
+      <SectionTitle title="مدخلات التركيز (اختيارية)" detail="لا تدخلها إلا من مواصفات غرفة العد الفعلية" />
+      <Field label="مساحة العد الفعالة (mm²)" value={countingArea} onChangeText={setCountingArea} hint="المساحة الفعلية التي تمثلها العينة" />
+      <Field label="معامل التخفيف" value={dilutionFactor} onChangeText={setDilutionFactor} hint="مثال 1 إذا لم يحدث تخفيف" />
+      <Text style={styles.statusBody}>بدون مساحة العد ومعامل التخفيف لن يُحسب التركيز، بدلًا من عرض رقم مبني على افتراضات غير مؤكدة.</Text>
       <Field label="اسم الإعداد" value={setupLabel} onChangeText={setSetupLabel} hint="الهاتف · العدسة · الحجرة" />
       <PrimaryButton label="حفظ المعايرة" icon="save" onPress={handleSave} />
       {error ? <View style={styles.errorRow}><MaterialIcons name="error-outline" size={17} color={COLORS.danger} /><Text style={styles.errorText}>{error}</Text></View> : null}
