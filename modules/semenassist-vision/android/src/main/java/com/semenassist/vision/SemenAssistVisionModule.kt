@@ -3,6 +3,7 @@ package com.semenassist.vision
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.math.abs
@@ -102,8 +103,20 @@ class SemenAssistVisionModule : Module() {
   private fun analyze(retriever: MediaMetadataRetriever, micronsPerPixel: Double, chamberDepth: Double): Map<String, Any> {
     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
     require(durationMs >= 1000L) { "مدة الفيديو غير كافية أو غير قابلة للقراءة." }
-    val fpsMetadata = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()
-    val fps = fpsMetadata?.takeIf { it.isFinite() && it >= 1.0 } ?: 30.0
+    val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+      ?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 1.0 }
+    val sourceFrameCount = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull()
+        ?.takeIf { it > 0 } ?: 0
+    } else 0
+    val durationSec = durationMs / 1000.0
+    val derivedSourceFps = if (sourceFrameCount > 0 && durationSec > 0.0) sourceFrameCount / durationSec else null
+    val fps = derivedSourceFps ?: captureFps ?: 0.0
+    val fpsSource = when {
+      derivedSourceFps != null -> "frame-count-duration"
+      captureFps != null -> "capture-metadata"
+      else -> "unavailable"
+    }
     val sampleCount = min(80, max(12, ceil(durationMs / 250.0).toInt()))
     val tracks = mutableListOf<Track>()
     val counts = mutableListOf<Int>()
@@ -140,8 +153,8 @@ class SemenAssistVisionModule : Module() {
     require(decodedSlots.size >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
 
     val validTracks = tracks.filter { it.points.size >= 3 }
-    val durationSec = durationMs / 1000.0
     val adjustedScale = micronsPerPixel / sourceScale
+    // The analysis timeline is the evenly spaced requested sample slots, not source FPS.
     val sampleRate = sampleCount.toDouble() / durationSec
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
     val moving = metrics.count { (it["vsl"] ?: 0.0) >= 1.0 }
@@ -167,8 +180,8 @@ class SemenAssistVisionModule : Module() {
     if (decodedSlots.size < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
     if (coveragePct < 90.0) issues.add("تغطية فك الإطارات أقل من 90%؛ قد تكون بعض أجزاء الفيديو مفقودة.")
     if (validTracks.size < 5) issues.add("عدد المسارات المكتشفة منخفض؛ راجع الإضاءة والتركيز.")
-    if (fpsMetadata == null) issues.add("معدل الإطارات غير متاح؛ استُخدمت قيمة تقريبية.")
-    else if (fps < 25) issues.add("معدل الإطارات أقل من 25 إطارًا/ثانية.")
+    if (fpsSource == "unavailable") issues.add("معدل الإطارات الأصلي غير متاح في بيانات الفيديو.")
+    else if (fps < 25) issues.add("معدل الإطارات الأصلي أقل من 25 إطارًا/ثانية.")
     if (sourceWidth < 640) issues.add("دقة الفيديو أقل من 640 بكسل.")
     if (meanBrightness < 35) issues.add("متوسط سطوع الإطارات منخفض؛ راجع الإضاءة.")
     if (meanBrightness > 225) issues.add("الإطارات شديدة السطوع؛ قد تكون تفاصيل الخلايا مفقودة.")
@@ -182,9 +195,10 @@ class SemenAssistVisionModule : Module() {
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.3.0-kalman-hungarian",
-      "framesAnalyzed" to decodedSlots.size, "frameCount" to (durationSec * fps).toInt(),
-      "fps" to fps, "width" to sourceWidth, "height" to sourceHeight,
+      "engineVersion" to "0.4.0-ground-truth-timing",
+      "framesAnalyzed" to decodedSlots.size, "frameCount" to sourceFrameCount,
+      "fps" to fps, "fpsSource" to fpsSource, "sampleRateHz" to sampleRate,
+      "width" to sourceWidth, "height" to sourceHeight,
       "durationSec" to durationSec, "analyzedDurationSec" to analyzedDurationSec,
       "coveragePct" to coveragePct, "objectsDetected" to validTracks.size,
       "averageObjectsPerFrame" to averageCount, "concentration" to concentration,
