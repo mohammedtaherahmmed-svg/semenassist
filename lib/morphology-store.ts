@@ -154,6 +154,12 @@ export async function exportMorphologyDataset(records: MorphologyImageRecord[]) 
         object_id: object.objectId,
         labels: { head_shape: object.headShape, tail_status: object.tailStatus, overlap: object.overlap, debris: object.debris },
         masks: object.masks.map((mask) => ({ region: mask.region, points_normalized: mask.points, reviewer_id: mask.reviewerId, created_at: mask.createdAt })),
+        second_review: object.secondReview ? {
+          reviewer_id: object.secondReview.reviewerId,
+          reviewed_at: object.secondReview.reviewedAt,
+          labels: { head_shape: object.secondReview.headShape, tail_status: object.secondReview.tailStatus, overlap: object.secondReview.overlap, debris: object.secondReview.debris },
+          masks: object.secondReview.masks.map((mask) => ({ region: mask.region, points_normalized: mask.points, reviewer_id: mask.reviewerId, created_at: mask.createdAt })),
+        } : null,
         annotated_at: object.annotatedAt,
         reviewer_id: object.reviewerId,
       })),
