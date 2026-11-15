@@ -110,8 +110,8 @@ def main():
     args = parser.parse_args()
     report = prepare(args.manifest, args.output)
     print(json.dumps(report, indent=2))
-    if not sum(report["eligible_images"].values()):
-        raise SystemExit("No training images qualified. Review skip reasons; no model was trained.")
+    if not report["training_ready"]:
+        raise SystemExit("Train/validation/test must each contain at least one eligible image from sample-grouped splits. Review the preparation report; no model was trained.")
 
 
 if __name__ == "__main__":
