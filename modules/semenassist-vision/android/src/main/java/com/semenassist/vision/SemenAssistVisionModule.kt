@@ -3,6 +3,7 @@ package com.semenassist.vision
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.math.abs
@@ -13,11 +14,69 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 private data class Detection(val x: Double, val y: Double)
+private data class FrameQuality(val meanBrightness: Double, val contrastStdDev: Double, val sharpnessVariance: Double)
+private class KalmanAxis(initial: Double) {
+  var position = initial
+  var velocity = 0.0
+  private var p00 = 25.0
+  private var p01 = 0.0
+  private var p10 = 0.0
+  private var p11 = 25.0
+  private val measurementNoise = 4.0
+  private val processNoise = 0.05
+
+  fun predict(dt: Double) {
+    val dt2 = dt * dt
+    val dt3 = dt2 * dt
+    val dt4 = dt2 * dt2
+    val old00 = p00
+    val old01 = p01
+    val old10 = p10
+    val old11 = p11
+    position += dt * velocity
+    p00 = old00 + dt * (old10 + old01) + dt2 * old11 + processNoise * dt4 / 4.0
+    p01 = old01 + dt * old11 + processNoise * dt3 / 2.0
+    p10 = old10 + dt * old11 + processNoise * dt3 / 2.0
+    p11 = old11 + processNoise * dt2
+  }
+
+  fun update(measurement: Double) {
+    val innovation = measurement - position
+    val denominator = p00 + measurementNoise
+    val k0 = p00 / denominator
+    val k1 = p10 / denominator
+    position += k0 * innovation
+    velocity += k1 * innovation
+    val old00 = p00
+    val old01 = p01
+    p00 = (1.0 - k0) * old00
+    p01 = (1.0 - k0) * old01
+    p10 -= k1 * old00
+    p11 -= k1 * old01
+  }
+}
+
+private class Kalman2D(initial: Detection) {
+  private val x = KalmanAxis(initial.x)
+  private val y = KalmanAxis(initial.y)
+  fun predict(dt: Double) : Detection {
+    x.predict(dt)
+    y.predict(dt)
+    return Detection(x.position, y.position)
+  }
+  fun update(measurement: Detection) {
+    x.update(measurement.x)
+    y.update(measurement.y)
+  }
+}
+
 private data class Track(
-  val points: MutableList<Detection> = mutableListOf(),
-  val frameIndices: MutableList<Int> = mutableListOf(),
-  var last: Detection? = null,
-  var lastFrame: Int = -1
+  val points: MutableList<Detection>,
+  val frameIndices: MutableList<Int>,
+  var last: Detection,
+  var lastFrame: Int,
+  val kalman: Kalman2D,
+  var kalmanFrame: Int
 )
 
 class SemenAssistVisionModule : Module() {
@@ -44,19 +103,31 @@ class SemenAssistVisionModule : Module() {
   private fun analyze(retriever: MediaMetadataRetriever, micronsPerPixel: Double, chamberDepth: Double): Map<String, Any> {
     val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
     require(durationMs >= 1000L) { "مدة الفيديو غير كافية أو غير قابلة للقراءة." }
-    val fpsMetadata = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()
-    val fps = fpsMetadata?.takeIf { it.isFinite() && it >= 1.0 } ?: 30.0
+    val captureFps = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+      ?.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 1.0 }
+    val sourceFrameCount = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull()
+        ?.takeIf { it > 0 } ?: 0
+    } else 0
+    val durationSec = durationMs / 1000.0
+    val derivedSourceFps = if (sourceFrameCount > 0 && durationSec > 0.0) sourceFrameCount / durationSec else null
+    val fps = derivedSourceFps ?: captureFps ?: 0.0
+    val fpsSource = when {
+      derivedSourceFps != null -> "frame-count-duration"
+      captureFps != null -> "capture-metadata"
+      else -> "unavailable"
+    }
     val sampleCount = min(80, max(12, ceil(durationMs / 250.0).toInt()))
     val tracks = mutableListOf<Track>()
     val counts = mutableListOf<Int>()
+    val frameQualities = mutableListOf<FrameQuality>()
+    val decodedSlots = mutableListOf<Int>()
     var sourceWidth = 0
     var sourceHeight = 0
-    var processed = 0
     var sourceScale = 1.0
 
     for (index in 0 until sampleCount) {
-      // Keep the original sample slot as the timebase. Do not compress indices
-      // when MediaMetadataRetriever fails to decode an individual frame.
+      // Keep source sample slots as the timebase; missing decodes never compress time.
       val timeUs = (index.toLong() * durationMs * 1000L) / sampleCount
       val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST) ?: continue
       try {
@@ -69,22 +140,21 @@ class SemenAssistVisionModule : Module() {
           frame, max(1, (frame.width * sourceScale).toInt()),
           max(1, (frame.height * sourceScale).toInt()), true
         ) else frame
+        frameQualities.add(measureFrameQuality(scaled))
         val detections = detect(scaled)
         if (scaled !== frame) scaled.recycle()
         counts.add(detections.size)
+        decodedSlots.add(index)
         updateTracks(tracks, detections, index)
-        processed++
       } finally {
         frame.recycle()
       }
     }
-    require(processed >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
+    require(decodedSlots.size >= 8 && sourceWidth > 0) { "تعذر استخراج إطارات كافية من الفيديو." }
 
     val validTracks = tracks.filter { it.points.size >= 3 }
-    val durationSec = durationMs / 1000.0
     val adjustedScale = micronsPerPixel / sourceScale
-    // Samples are requested at duration / sampleCount intervals. Using processed
-    // frames or (sampleCount - 1) compresses time and biases velocity estimates.
+    // The analysis timeline is the evenly spaced requested sample slots, not source FPS.
     val sampleRate = sampleCount.toDouble() / durationSec
     val metrics = validTracks.map { track -> trackMetrics(track, adjustedScale, sampleRate) }
     val moving = metrics.count { (it["vsl"] ?: 0.0) >= 1.0 }
@@ -97,30 +167,57 @@ class SemenAssistVisionModule : Module() {
     val volumeUm3 = sourceWidth * sourceHeight * micronsPerPixel * micronsPerPixel * chamberDepth
     val volumeMl = volumeUm3 / 1.0e12
     val concentration = if (volumeMl > 0) averageCount / volumeMl / 1.0e6 else 0.0
+
+    val meanBrightness = frameQualities.map { it.meanBrightness }.average()
+    val contrastStdDev = frameQualities.map { it.contrastStdDev }.average()
+    val sharpnessVariance = frameQualities.map { it.sharpnessVariance }.average()
+    val coveragePct = decodedSlots.size * 100.0 / sampleCount
+    val analyzedDurationSec = if (decodedSlots.size < 2) 0.0 else
+      ((decodedSlots.last() - decodedSlots.first() + 1).toDouble() / sampleCount) * durationSec
+
     val issues = mutableListOf<String>()
     if (durationSec < 12) issues.add("مدة الفيديو أقل من 12 ثانية.")
-    if (processed < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
+    if (decodedSlots.size < 12) issues.add("عدد الإطارات المستخرجة منخفض.")
+    if (coveragePct < 90.0) issues.add("تغطية فك الإطارات أقل من 90%؛ قد تكون بعض أجزاء الفيديو مفقودة.")
     if (validTracks.size < 5) issues.add("عدد المسارات المكتشفة منخفض؛ راجع الإضاءة والتركيز.")
-    if (fpsMetadata == null) issues.add("معدل الإطارات غير متاح؛ استُخدمت قيمة تقريبية.")
+    if (fpsSource == "unavailable") issues.add("معدل الإطارات الأصلي غير متاح في بيانات الفيديو.")
+    else if (fps < 25) issues.add("معدل الإطارات الأصلي أقل من 25 إطارًا/ثانية.")
     if (sourceWidth < 640) issues.add("دقة الفيديو أقل من 640 بكسل.")
+    if (meanBrightness < 35) issues.add("متوسط سطوع الإطارات منخفض؛ راجع الإضاءة.")
+    if (meanBrightness > 225) issues.add("الإطارات شديدة السطوع؛ قد تكون تفاصيل الخلايا مفقودة.")
+    if (contrastStdDev < 18) issues.add("التباين منخفض؛ راجع ضبط الإضاءة والتكثيف.")
+    if (sharpnessVariance < 12) issues.add("حدة الصورة منخفضة أو التركيز غير واضح.")
     val countMean = counts.average().takeIf { it > 0 } ?: 0.0
     val countCv = if (countMean > 0) sqrt(counts.map { (it - countMean) * (it - countMean) }.average()) / countMean else 1.0
     if (countCv > 0.1) issues.add("تباين عدد الأجسام بين الإطارات أعلى من 10%.")
-    val quality = max(0, min(100, 100 - issues.size * 16 + min(12, validTracks.size / 5)))
+    val quality = max(0, min(100, 100 - issues.size * 12 + min(12, validTracks.size / 5)))
     val avg = { key: String -> if (metrics.isEmpty()) 0.0 else metrics.map { it[key] ?: 0.0 }.average() }
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.1.0-local-frame-tracker",
-      "framesAnalyzed" to processed, "frameCount" to (durationSec * fps).toInt(),
-      "fps" to fps, "width" to sourceWidth, "height" to sourceHeight,
-      "durationSec" to durationSec, "analyzedDurationSec" to durationSec,
-      "coveragePct" to 100.0, "objectsDetected" to validTracks.size,
+      "engineVersion" to "0.4.0-ground-truth-timing",
+      "framesAnalyzed" to decodedSlots.size, "frameCount" to sourceFrameCount,
+      "fps" to fps, "fpsSource" to fpsSource, "sampleRateHz" to sampleRate,
+      "width" to sourceWidth, "height" to sourceHeight,
+      "durationSec" to durationSec, "analyzedDurationSec" to analyzedDurationSec,
+      "coveragePct" to coveragePct, "objectsDetected" to validTracks.size,
       "averageObjectsPerFrame" to averageCount, "concentration" to concentration,
       "totalMotility" to totalMotility, "progressiveMotility" to progressiveMotility,
       "nonProgressiveMotility" to nonProgressive, "immotile" to immotile,
       "confidence" to (quality / 100.0), "qualityScore" to quality,
-      "qualityIssues" to issues, "thresholds" to mapOf("sampleFrames" to sampleCount.toDouble()),
+      "qualityIssues" to issues,
+      "qualityMetrics" to mapOf(
+        "meanBrightness" to meanBrightness,
+        "contrastStdDev" to contrastStdDev,
+        "sharpnessVariance" to sharpnessVariance,
+        "decodedFrameCoveragePct" to coveragePct
+      ),
+      "thresholds" to mapOf(
+        "sampleFrames" to sampleCount.toDouble(),
+        "minimumBrightness" to 35.0, "maximumBrightness" to 225.0,
+        "minimumContrastStdDev" to 18.0, "minimumSharpnessVariance" to 12.0,
+        "minimumDecodedCoveragePct" to 90.0
+      ),
       "coefficientOfVariation" to countCv,
       "kinematics" to mapOf("vcl" to avg("vcl"), "vsl" to avg("vsl"), "vap" to avg("vap"),
         "lin" to avg("lin"), "str" to avg("str"), "wob" to avg("wob"), "alh" to avg("alh"), "bcf" to 0.0),
@@ -129,9 +226,40 @@ class SemenAssistVisionModule : Module() {
         "coiledTails" to 0, "bentTails" to 0, "doubleTails" to 0, "acrosomeAbnormal" to 0,
         "midpieceDefects" to 0, "tzi" to 0.0, "sdi" to 0.0,
         "automaticLimitations" to listOf("تحليل الشكل المجهري غير متاح في المحرك المحلي الأولي.")),
-      "confidenceInterpretation" to "quality-score proxy; not a clinical probability",
+      "confidenceInterpretation" to "heuristic acquisition-quality score; not a clinical probability",
       "processingLocation" to "on-device"
     )
+  }
+
+  private fun measureFrameQuality(bitmap: Bitmap): FrameQuality {
+    val width = bitmap.width
+    val height = bitmap.height
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val gray = IntArray(pixels.size)
+    var sum = 0.0
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val value = (0.299 * ((p shr 16) and 255) + 0.587 * ((p shr 8) and 255) + 0.114 * (p and 255)).toInt()
+      gray[i] = value
+      sum += value
+    }
+    val mean = sum / max(1, gray.size)
+    val variance = gray.map { (it - mean) * (it - mean) }.average().coerceAtLeast(0.0)
+    var laplacianSquared = 0.0
+    var samples = 0
+    if (width >= 3 && height >= 3) {
+      for (y in 1 until height - 1) {
+        for (x in 1 until width - 1) {
+          val index = y * width + x
+          val laplacian = gray[index - 1] + gray[index + 1] + gray[index - width] + gray[index + width] - 4 * gray[index]
+          laplacianSquared += laplacian.toDouble() * laplacian
+          samples++
+        }
+      }
+    }
+    val sharpness = if (samples > 0) laplacianSquared / samples else 0.0
+    return FrameQuality(mean, sqrt(variance), sharpness)
   }
 
   private fun detect(bitmap: Bitmap): List<Detection> {
@@ -181,51 +309,118 @@ class SemenAssistVisionModule : Module() {
     return output
   }
 
-  private fun updateTracks(tracks: MutableList<Track>, detections: List<Detection>, frame: Int) {
-    data class Candidate(val distance: Double, val trackIndex: Int, val detectionIndex: Int)
+  private fun hungarian(costs: Array<DoubleArray>): List<Pair<Int, Int>> {
+    val size = costs.size
+    if (size == 0) return emptyList()
+    val u = DoubleArray(size + 1)
+    val v = DoubleArray(size + 1)
+    val p = IntArray(size + 1)
+    val way = IntArray(size + 1)
+    for (i in 1..size) {
+      p[0] = i
+      var j0 = 0
+      val minv = DoubleArray(size + 1) { Double.POSITIVE_INFINITY }
+      val used = BooleanArray(size + 1)
+      do {
+        used[j0] = true
+        val i0 = p[j0]
+        var delta = Double.POSITIVE_INFINITY
+        var j1 = 0
+        for (j in 1..size) {
+          if (!used[j]) {
+            val current = costs[i0 - 1][j - 1] - u[i0] - v[j]
+            if (current < minv[j]) {
+              minv[j] = current
+              way[j] = j0
+            }
+            if (minv[j] < delta) {
+              delta = minv[j]
+              j1 = j
+            }
+          }
+        }
+        for (j in 0..size) {
+          if (used[j]) {
+            u[p[j]] += delta
+            v[j] -= delta
+          } else {
+            minv[j] -= delta
+          }
+        }
+        j0 = j1
+      } while (p[j0] != 0)
+      do {
+        val j1 = way[j0]
+        p[j0] = p[j1]
+        j0 = j1
+      } while (j0 != 0)
+    }
+    val result = mutableListOf<Pair<Int, Int>>()
+    for (j in 1..size) if (p[j] != 0) result.add(Pair(p[j] - 1, j - 1))
+    return result
+  }
 
-    val candidates = mutableListOf<Candidate>()
-    for (trackIndex in tracks.indices) {
-      val track = tracks[trackIndex]
-      val last = track.last ?: continue
+  private fun updateTracks(tracks: MutableList<Track>, detections: List<Detection>, frame: Int) {
+    val eligible = mutableListOf<Int>()
+    val predicted = mutableListOf<Detection>()
+    for (index in tracks.indices) {
+      val track = tracks[index]
       val gap = frame - track.lastFrame
       if (gap !in 1..2) continue
-      // Scale the search gate with the number of missed sample slots.
-      val maxDistance = 22.0 * gap
-      for (detectionIndex in detections.indices) {
-        val point = detections[detectionIndex]
-        val distance = hypot(point.x - last.x, point.y - last.y)
-        if (distance <= maxDistance) {
-          candidates.add(Candidate(distance, trackIndex, detectionIndex))
-        }
-      }
+      val dt = max(1, frame - track.kalmanFrame)
+      predicted.add(track.kalman.predict(dt.toDouble()))
+      track.kalmanFrame = frame
+      eligible.add(index)
     }
 
-    // Resolve the globally closest pairs first; this avoids track-list order bias.
-    candidates.sortWith(compareBy<Candidate>({ it.distance }, { it.trackIndex }, { it.detectionIndex }))
-    val usedTracks = mutableSetOf<Int>()
+    val trackCount = eligible.size
+    val detectionCount = detections.size
+    val size = trackCount + detectionCount
     val usedDetections = mutableSetOf<Int>()
-    for (candidate in candidates) {
-      if (!usedTracks.add(candidate.trackIndex)) continue
-      if (!usedDetections.add(candidate.detectionIndex)) {
-        usedTracks.remove(candidate.trackIndex)
-        continue
+    if (size > 0) {
+      val unmatchedCost = 45.0
+      val invalidCost = unmatchedCost * (size + 2) * 1_000_000.0
+      val costs = Array(size) { DoubleArray(size) }
+      for (i in 0 until trackCount) {
+        for (j in 0 until detectionCount) {
+          val distance = hypot(predicted[i].x - detections[j].x, predicted[i].y - detections[j].y)
+          costs[i][j] = if (distance <= 22.0 * max(1, frame - tracks[eligible[i]].lastFrame)) distance else invalidCost
+        }
+        for (j in detectionCount until size) costs[i][j] = unmatchedCost
       }
-      val track = tracks[candidate.trackIndex]
-      val detection = detections[candidate.detectionIndex]
-      track.points.add(detection)
-      track.frameIndices.add(frame)
-      track.last = detection
-      track.lastFrame = frame
+      for (i in trackCount until size) {
+        for (j in 0 until detectionCount) costs[i][j] = unmatchedCost
+        for (j in detectionCount until size) costs[i][j] = 0.0
+      }
+      for ((row, column) in hungarian(costs)) {
+        if (row >= trackCount || column >= detectionCount) continue
+        val track = tracks[eligible[row]]
+        val detection = detections[column]
+        val distance = hypot(predicted[row].x - detection.x, predicted[row].y - detection.y)
+        val gate = 22.0 * max(1, frame - track.lastFrame)
+        if (distance > gate) continue
+        track.kalman.update(detection)
+        track.points.add(detection)
+        track.frameIndices.add(frame)
+        track.last = detection
+        track.lastFrame = frame
+        usedDetections.add(column)
+      }
     }
 
     for (index in detections.indices) {
-      if (index !in usedDetections) {
-        tracks.add(Track(mutableListOf(detections[index]), mutableListOf(frame), detections[index], frame))
-      }
+      if (index in usedDetections) continue
+      val detection = detections[index]
+      tracks.add(Track(
+        mutableListOf(detection),
+        mutableListOf(frame),
+        detection,
+        frame,
+        Kalman2D(detection),
+        frame
+      ))
     }
   }
-
   private fun trackMetrics(track: Track, micronsPerPixel: Double, sampleRate: Double): Map<String, Double> {
     val points = track.points
     val elapsed = (track.frameIndices.last() - track.frameIndices.first()) / sampleRate

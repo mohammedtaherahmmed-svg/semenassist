@@ -10,6 +10,8 @@ export type VisionAnalysis = {
   framesAnalyzed: number;
   frameCount: number;
   fps: number;
+  fpsSource: string;
+  sampleRateHz: number;
   width: number;
   height: number;
   durationSec: number;
@@ -27,6 +29,7 @@ export type VisionAnalysis = {
   qualityIssues: string[];
   thresholds: Record<string, number>;
   coefficientOfVariation: number;
+  qualityMetrics: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
   kinematics: { vcl: number; vsl: number; vap: number; lin: number; str: number; wob: number; alh: number; bcf: number | null };
   morphology: MorphologyRecord;
   processingLocation?: "on-device";

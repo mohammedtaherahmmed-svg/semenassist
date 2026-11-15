@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/security-and-clinical-improvements
+      - feature/kalman-hungarian-tracking
+      - feature/ground-truth-benchmark
   pull_request:
     branches:
       - main
@@ -18,10 +20,10 @@ jobs:
           python-version: "3.12"
       - name: Compile vision Python modules
         working-directory: server/vision
-        run: python -m py_compile analyze_video.py metrics.py tracking.py test_metrics.py test_tracking.py
+        run: python -m py_compile analyze_video.py metrics.py tracking.py ground_truth_benchmark.py test_metrics.py test_tracking.py test_ground_truth_benchmark.py
       - name: Run pure kinematics unit tests
         working-directory: server/vision
-        run: python -m unittest -v test_metrics.py test_tracking.py
+        run: python -m unittest -v test_metrics.py test_tracking.py test_ground_truth_benchmark.py
 
   typescript-check:
     runs-on: ubuntu-latest

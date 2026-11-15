@@ -62,3 +62,24 @@ python3 scripts/benchmark_opencv.py benchmark/videos benchmark/ground_truth.json
 يُنتج التقرير JSON ملخص `MAE` و`RMSE` و`bias` للحركة والمورفولوجي، وملخصًا ثنائيًا تقريبيًا لاكتشاف وجود العيب (`TP/TN/FP/FN` وSensitivity/Specificity)، وملف CSV صفًا لكل عينة، مع زمن تشغيل المحرك ورسائل العينات الفاشلة. لا يتم اختلاق أي label ناقص، و`--fail-on-error` يجعل CI يفشل إذا تعذر تحليل عينة.
 
 هذا Benchmark بحثي وليس اعتمادًا طبيًا. لا تحسب الدقة من قيم morphology إلا إذا كانت Ground Truth لنفس الفيديو/الإطارات ومراجعة مختص، ولا تخلط عينات الضبط مع عينات التقييم.
+
+ 
+## Synthetic ground-truth evaluation
+
+For a deterministic synthetic video with frame-level annotations (CSV columns
+`frame,time_sec,cell_id,x_px,y_px`), run the Python OpenCV pipeline and compare
+its detections and track identities:
+
+```bash
+cd server/vision
+python ground_truth_benchmark.py /path/to/SemenAssist_GroundTruth.mp4 /path/to/SemenAssist_GroundTruth.csv \
+  --microns-per-pixel 0.5 --chamber-depth 20 --tolerance-px 12 \
+  --output /path/to/ground-truth-benchmark.json
+```
+
+The report includes frame-wise detection precision/recall, ID switches, IDF1,
+and per-cell VCL/VSL/VAP/LIN absolute errors. The script is explicitly scoped
+to the Python OpenCV pipeline. It does not validate the Android Kotlin engine;
+Android validation requires raw per-frame track observations exported from a
+device build and evaluated with the same CSV annotations. The synthetic fixture
+is an engineering test, not clinical evidence.
