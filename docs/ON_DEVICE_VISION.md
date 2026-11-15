@@ -127,3 +127,32 @@ Example:
     python ground_truth_benchmark.py clip.mp4 annotations.csv --ground-truth-fps 50 --microns-per-pixel 0.5 --chamber-depth 20 --counting-area-mm2 AREA --dilution-factor FACTOR --output validation.json
 
 To score Android output, pass a JSON file containing the trackObservations array with --predictions-json android-tracks.json. CSV columns are frame,cell_id,x_px,y_px; optional time_sec supports timestamp alignment. This remains an engineering prototype, not clinical validation.
+
+## Morphology image workflow (research collection phase)
+
+The Android app now includes a separate Morphology tab for importing multiple microscope images and collecting structured, reviewer-entered object labels. Each record captures a pseudonymous sample ID, reviewer code, preparation state (stained/unstained/unknown), objective magnification, optional calibrated pixel size, microscope code, and per-object head-shape/tail-status plus overlap/debris flags.
+
+This is an image intake and manual annotation aid only:
+- It does not run an AI classifier, segmentation model, or automatic sperm detector.
+- A reviewer must visually identify each object before adding a label; the current UI does not draw head/tail masks or object bounding boxes.
+- The current image records are stored locally in AsyncStorage and refer to document-picker cache URIs. They are not yet a durable image archive or a training-ready dataset export; cache cleanup or app removal can invalidate image paths.
+- Do not enter patient names, dates of birth, or other direct identifiers. Use pseudonymous sample and reviewer codes and follow the laboratory's consent, access-control, retention, and de-identification procedures.
+- Labels are single-review entries. Adjudication by a second expert, inter-rater agreement, mask annotation, sample-level dataset splitting, and export/backup workflows remain future work.
+
+The existing `server/vision/datasets/morphology-annotation.schema.json` remains the stricter expert dataset contract for training/benchmark preparation. The new app workflow must not be represented as satisfying that contract until object masks, adjudication, durable image packaging, and a validated export pipeline are implemented.
+
+
+## Morphology image research workflow — extended implementation
+
+The Android Morphology tab now supports:
+- Copying selected JPEG/PNG/WebP files into the app's persistent documents directory (rather than retaining only temporary picker cache URIs), with per-image and aggregate size limits.
+- Capturing pseudonymous sample/reviewer IDs, preparation state, objective magnification, optional calibrated pixel size, microscope code, and image dimensions.
+- Manual polygon masks for head, midpiece, and tail using normalized image coordinates. Multiple region polygons can be staged for one object.
+- Independent second-review labels and masks, with a conservative agreement check. Any missing second review or label disagreement leaves the image unresolved; the app does not auto-adjudicate.
+- Export of a structured JSON manifest and individual source-image sharing. The manifest is not a ZIP archive; source images must be exported separately and placed under the manifest's relative images/ paths before dataset preparation.
+- A Python dataset-preparation script that checks source images, calibrated pixel scale, adjudication and polygon validity; assigns deterministic train/validation/test splits by pseudonymous sample ID; and writes YOLO segmentation labels plus a preparation report.
+- An optional Ultralytics YOLO-seg training entry point. Ultralytics is an external research dependency and is deliberately not bundled into the Android app or production runtime.
+
+Training eligibility is intentionally strict: only adjudicated records with calibrated pixel scale, a distinct second reviewer, matching primary/secondary categorical labels, and valid expert polygons are included. The train/validation/test partition is grouped by sample ID to prevent images from one sample leaking across splits.
+
+No pretrained or locally trained SemenAssist morphology model is shipped by this change. A real model requires a sufficiently large, representative, expert-labelled dataset, held-out sample-level evaluation, inter-rater analysis, external validation across microscopes/preparations, and separate clinical/regulatory review. The app currently stores polygon point annotations; it does not yet produce raster mask PNGs or independently calculate mask Dice/IoU.

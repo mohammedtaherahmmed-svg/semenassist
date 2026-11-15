@@ -1,37 +1,231 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "SemenAssist expert-reviewed morphology annotation manifest",
-  "description": "Research dataset contract. Not a clinical scoring specification. Patient/sample-level splits must prevent leakage.",
+  "description": "Research dataset contract for image-based sperm morphology. Not a clinical scoring specification. Dataset splits must be grouped by pseudonymous sample_id.",
   "type": "object",
-  "required": ["sample_id", "image_path", "preparation", "pixel_size_um", "reviewer_id", "adjudication_status", "objects"],
+  "required": [
+    "sample_id",
+    "image_path",
+    "preparation",
+    "reviewer_id",
+    "adjudication_status",
+    "objects"
+  ],
   "properties": {
-    "sample_id": {"type": "string", "minLength": 1, "description": "Pseudonymous sample identifier; no patient identifiers."},
-    "image_path": {"type": "string", "minLength": 1},
-    "preparation": {"type": "string", "enum": ["stained", "unstained", "unknown"]},
-    "pixel_size_um": {"type": "number", "exclusiveMinimum": 0},
-    "microscope_id": {"type": "string"},
-    "objective_magnification": {"type": "number", "exclusiveMinimum": 0},
-    "reviewer_id": {"type": "string", "minLength": 1},
-    "adjudication_status": {"type": "string", "enum": ["single-review", "adjudicated", "unresolved"]},
-    "split": {"type": "string", "enum": ["train", "validation", "test"], "description": "Assign by sample/patient, never by image/frame."},
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "image_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preparation": {
+      "type": "string",
+      "enum": [
+        "stained",
+        "unstained",
+        "unknown"
+      ]
+    },
+    "pixel_size_um": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0
+    },
+    "microscope_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "objective_magnification": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "exclusiveMinimum": 0
+    },
+    "image_width_px": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "image_height_px": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "second_reviewer_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "adjudication_status": {
+      "type": "string",
+      "enum": [
+        "single-review",
+        "adjudicated",
+        "unresolved"
+      ]
+    },
+    "split": {
+      "type": "string",
+      "enum": [
+        "train",
+        "validation",
+        "test"
+      ],
+      "description": "Assigned by sample_id only, never by image/frame."
+    },
     "objects": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["object_id", "head_mask", "tail_mask", "labels"],
+        "required": [
+          "object_id",
+          "labels",
+          "masks",
+          "reviewer_id"
+        ],
         "properties": {
-          "object_id": {"type": "string"},
-          "head_mask": {"type": ["string", "null"], "description": "Path to expert-labelled head mask."},
-          "tail_mask": {"type": ["string", "null"], "description": "Path to expert-labelled tail mask."},
-          "midpiece_mask": {"type": ["string", "null"]},
+          "object_id": {
+            "type": "string"
+          },
+          "reviewer_id": {
+            "type": "string"
+          },
+          "annotated_at": {
+            "type": "string"
+          },
           "labels": {
-            "type": "object",
-            "required": ["head_shape", "tail_status", "overlap", "debris"],
+            "$ref": "#/$defs/labels"
+          },
+          "second_review": {
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "head_shape": {"type": "string", "enum": ["normal", "round", "tapered", "amorphous", "small", "large", "vacuolated", "not-assessable"]},
-              "tail_status": {"type": "string", "enum": ["normal", "bent", "coiled", "multiple", "absent", "not-assessable"]},
-              "overlap": {"type": "boolean"},
-              "debris": {"type": "boolean"}
+              "reviewer_id": {
+                "type": "string"
+              },
+              "reviewed_at": {
+                "type": "string"
+              },
+              "labels": {
+                "$ref": "#/$defs/labels"
+              },
+              "masks": {
+                "$ref": "#/$defs/masks"
+              }
+            }
+          },
+          "masks": {
+            "$ref": "#/$defs/masks"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "labels": {
+      "type": "object",
+      "required": [
+        "head_shape",
+        "tail_status",
+        "overlap",
+        "debris"
+      ],
+      "properties": {
+        "head_shape": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "round",
+            "tapered",
+            "amorphous",
+            "small",
+            "large",
+            "vacuolated",
+            "not-assessable"
+          ]
+        },
+        "tail_status": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "bent",
+            "coiled",
+            "multiple",
+            "absent",
+            "not-assessable"
+          ]
+        },
+        "overlap": {
+          "type": "boolean"
+        },
+        "debris": {
+          "type": "boolean"
+        }
+      }
+    },
+    "masks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "region",
+          "points_normalized",
+          "reviewer_id"
+        ],
+        "properties": {
+          "region": {
+            "type": "string",
+            "enum": [
+              "head",
+              "midpiece",
+              "tail"
+            ]
+          },
+          "reviewer_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "points_normalized": {
+            "type": "array",
+            "minItems": 3,
+            "items": {
+              "type": "object",
+              "required": [
+                "x",
+                "y"
+              ],
+              "properties": {
+                "x": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "y": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
             }
           }
         }

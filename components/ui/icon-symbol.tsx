@@ -15,6 +15,7 @@ const MAPPING = {
   "doc.text.fill": "description",
   scope: "tune",
   "gearshape.fill": "settings",
+  "photo.fill": "photo-library",
 } satisfies IconMapping;
 
 export function IconSymbol({

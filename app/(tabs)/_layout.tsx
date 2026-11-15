@@ -14,6 +14,7 @@ export default function TabLayout() {
     <Tabs.Screen name="samples" options={{ title: "العينات", tabBarIcon: ({ color }) => <IconSymbol size={23} name="doc.text.fill" color={color} /> }} />
     <Tabs.Screen name="calibration" options={{ title: "المعايرة", tabBarIcon: ({ color }) => <IconSymbol size={23} name="scope" color={color} /> }} />
     <Tabs.Screen name="validation" options={{ title: "التحقق", tabBarIcon: ({ color }) => <IconSymbol size={23} name="doc.text.fill" color={color} /> }} />
+    <Tabs.Screen name="morphology" options={{ title: "المورفولوجي", tabBarIcon: ({ color }) => <IconSymbol size={23} name="photo.fill" color={color} /> }} />
     <Tabs.Screen name="settings" options={{ title: "الإعدادات", tabBarIcon: ({ color }) => <IconSymbol size={23} name="gearshape.fill" color={color} /> }} />
   </Tabs>;
 }
