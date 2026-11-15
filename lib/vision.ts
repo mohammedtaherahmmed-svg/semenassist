@@ -20,6 +20,11 @@ export type VisionAnalysis = {
   objectsDetected: number;
   averageObjectsPerFrame: number;
   concentration: number;
+  concentrationStatus: string;
+  countingAreaMm2: number;
+  dilutionFactor: number;
+  trackObservations: Array<{ trackId: number; sampleSlot: number; timeSec: number; xPx: number; yPx: number }>;
+  trackingDiagnostics: { totalTracksCreated: number; validTracks: number; minimumTrackLength: number; maxGapSamples: number; identitySwitches: number | null; fragmentation: number | null; note: string };
   totalMotility: number;
   progressiveMotility: number;
   nonProgressiveMotility: number;
@@ -36,7 +41,7 @@ export type VisionAnalysis = {
 };
 
 type NativeVisionModule = {
-  analyzeVideo(uri: string, micronsPerPixel: number, chamberDepth: number): Promise<VisionAnalysis>;
+  analyzeVideo(uri: string, micronsPerPixel: number, chamberDepth: number, countingAreaMm2: number, dilutionFactor: number): Promise<VisionAnalysis>;
 };
 
 export type AnalysisProgress = {
@@ -61,7 +66,7 @@ function getNativeVision() {
  */
 export async function analyzeVideoUri(
   uri: string,
-  calibration: { micronsPerPixel: number; chamberDepth: number },
+  calibration: { micronsPerPixel: number; chamberDepth: number; countingAreaMm2?: number; dilutionFactor?: number },
   _extension = ".mp4",
   onProgress?: (progress: AnalysisProgress) => void,
 ): Promise<VisionAnalysis> {
@@ -69,12 +74,14 @@ export async function analyzeVideoUri(
     throw new Error("مسار الفيديو غير صالح. اختر ملفًا محفوظًا على الهاتف.");
   }
   if (!Number.isFinite(calibration.micronsPerPixel) || calibration.micronsPerPixel <= 0 ||
-      !Number.isFinite(calibration.chamberDepth) || calibration.chamberDepth <= 0) {
+      !Number.isFinite(calibration.chamberDepth) || calibration.chamberDepth <= 0 ||
+      (calibration.countingAreaMm2 != null && (!Number.isFinite(calibration.countingAreaMm2) || calibration.countingAreaMm2 < 0)) ||
+      (calibration.dilutionFactor != null && (!Number.isFinite(calibration.dilutionFactor) || calibration.dilutionFactor < 0))) {
     throw new Error("بيانات المعايرة غير صالحة.");
   }
   onProgress?.({ status: "processing", progress: 8, stage: "بدء التحليل محليًا على الهاتف" });
   try {
-    const result = await getNativeVision().analyzeVideo(uri, calibration.micronsPerPixel, calibration.chamberDepth);
+    const result = await getNativeVision().analyzeVideo(uri, calibration.micronsPerPixel, calibration.chamberDepth, calibration.countingAreaMm2 ?? 0, calibration.dilutionFactor ?? 0);
     if (!result?.ok || result.processingLocation !== "on-device") {
       throw new Error("لم يؤكد محرك الهاتف إتمام التحليل محليًا.");
     }
