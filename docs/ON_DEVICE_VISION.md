@@ -120,7 +120,7 @@ A numeric concentration is withheld unless both effective counting area (mm²) a
 Android continues to mark morphology as not assessed on-device. The Python contour pipeline is explicitly labelled as a research-only shape proxy, and its Kruger-threshold interpretation has been removed. A JSON schema defines the expert annotation contract for head masks, tail masks, midpiece masks, preparation, pixel scale, adjudication, and sample-level dataset splits. A trained morphology model is not included because no expert-labelled dataset is available.
 
 ### Scientific validation dashboard
-The sample report exposes source timing, sample rate, track counts, and exported observation count. The benchmark evaluator reports detection precision/recall, localization error, ID switches, IDF1, fragmentation, and per-cell VCL/VSL/VAP/LIN errors. These metrics require expert-annotated CSV data using the same coordinate/time basis.
+The sample report exposes source timing, sample rate, track counts, and exported observation count. The benchmark evaluator reports detection precision/recall, localization error, ID switches, IDF1, fragmentation, per-cell VCL/VSL/VAP/LIN errors, and Bland–Altman bias/limits of agreement for matched stable tracks. These metrics require expert-annotated CSV data using the same coordinate/time basis.
 
 Example:
     cd server/vision
