@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -108,6 +109,7 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
 
     per_cell = []
     velocity_errors = defaultdict(list)
+    signed_velocity_differences = defaultdict(list)
     for cell_id in gt_ids:
         rows = sorted(matched_points.get(cell_id, []))
         observed_track_ids = {row[1] for row in rows}
@@ -121,9 +123,11 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
         predicted_metrics = track_metrics(predicted_points, frames, microns_per_pixel, source_fps)
         errors = {}
         for key in ("vcl", "vsl", "vap", "lin"):
-            error = abs(predicted_metrics[key] - truth_metrics[key])
+            signed_difference = predicted_metrics[key] - truth_metrics[key]
+            error = abs(signed_difference)
             errors[key] = error
             velocity_errors[key].append(error)
+            signed_velocity_differences[key].append(signed_difference)
         per_cell.append({
             "cell_id": cell_id,
             "matched_frames": len(rows),
@@ -134,6 +138,17 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
                 "absolute_error": errors,
             },
         })
+
+    bland_altman = {}
+    for key, differences in signed_velocity_differences.items():
+        bias = sum(differences) / len(differences)
+        if len(differences) >= 2:
+            variance = sum((value - bias) ** 2 for value in differences) / (len(differences) - 1)
+            sd = math.sqrt(variance)
+            lower, upper = bias - 1.96 * sd, bias + 1.96 * sd
+        else:
+            lower = upper = None
+        bland_altman[key] = {"n": len(differences), "bias": bias, "lower95": lower, "upper95": upper}
 
     return {
         "frames_compared": len(set(gt_by_frame) | set(pred_by_frame)),
@@ -150,6 +165,7 @@ def evaluate_tracking(ground_truth: list[dict], predictions: list[dict], toleran
             key: sum(values) / len(values) if values else None
             for key, values in velocity_errors.items()
         },
+        "bland_altman_velocity_agreement": bland_altman,
         "per_cell": per_cell,
     }
 
