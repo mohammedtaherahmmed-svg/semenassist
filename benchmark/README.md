@@ -83,3 +83,14 @@ to the Python OpenCV pipeline. It does not validate the Android Kotlin engine;
 Android validation requires raw per-frame track observations exported from a
 device build and evaluated with the same CSV annotations. The synthetic fixture
 is an engineering test, not clinical evidence.
+
+## Android track export and full CASA validation
+
+Each Android sample retains trackObservations containing trackId, sampleSlot, timeSec, xPx, and yPx. The report shows the number of exported observations. Use an expert-annotated CSV with columns frame,cell_id,x_px,y_px and optional time_sec:
+
+    cd server/vision
+    python ground_truth_benchmark.py clip.mp4 annotations.csv --predictions-json android-tracks.json --ground-truth-fps 50 --microns-per-pixel 0.5 --tolerance-px 12 --output validation.json
+
+The evaluator reports precision, recall, localization error, ID switches, IDF1, fragmentation, and per-cell kinematic errors. Concentration requires explicit --counting-area-mm2 and --dilution-factor; without both it is not calculated. Even with both, it is a provisional field-occupancy estimate pending chamber-specific reference-count validation.
+
+Morphology remains research-only. The annotation contract is server/vision/datasets/morphology-annotation.schema.json and requires expert head/tail labels and sample-level splits. No trained morphology model is bundled.
