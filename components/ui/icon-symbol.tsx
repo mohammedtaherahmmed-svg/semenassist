@@ -16,6 +16,7 @@ const MAPPING = {
   scope: "tune",
   "gearshape.fill": "settings",
   "photo.fill": "photo-library",
+  "checkmark.seal.fill": "verified",
 } satisfies IconMapping;
 
 export function IconSymbol({
