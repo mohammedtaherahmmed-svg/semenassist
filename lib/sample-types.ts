@@ -97,6 +97,7 @@ export type SampleRecord = {
   aiInterpretation?: AiInterpretation;
   morphology?: MorphologyRecord;
   manualMorphologyCount?: { imagesReviewed: number; totalExamined: number; normalForms: number; abnormalForms: number; notAssessable: number; updatedAt: string };
+  morphologyImageSummary?: { imageCount: number; annotatedImageCount: number; annotatedObjectCount: number; adjudicatedImageCount: number };
   advancedTests?: AdvancedTestsRecord;
 };
 

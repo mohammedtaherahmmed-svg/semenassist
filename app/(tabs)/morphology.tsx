@@ -2,6 +2,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as DocumentPicker from "expo-document-picker";
 import Svg, { Circle, Polygon } from "react-native-svg";
 import { useCallback, useEffect, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppHeader, COLORS, MedicalBanner, PrimaryButton, SectionTitle, StatusPill } from "@/components/clinical-ui";
@@ -31,8 +32,9 @@ const VIEW_W = 320;
 const VIEW_H = 220;
 
 export default function MorphologyScreen() {
+  const params = useLocalSearchParams<{ sampleId?: string }>();
   const [records, setRecords] = useState<MorphologyImageRecord[]>([]);
-  const [sampleId, setSampleId] = useState("");
+  const [sampleId, setSampleId] = useState(params.sampleId ?? "");
   const [reviewerId, setReviewerId] = useState("");
   const [secondReviewerId, setSecondReviewerId] = useState("");
   const [magnification, setMagnification] = useState("100");
@@ -54,6 +56,7 @@ export default function MorphologyScreen() {
 
   const refresh = useCallback(async () => setRecords(await loadMorphologyImages()), []);
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { if (params.sampleId) setSampleId(params.sampleId); }, [params.sampleId]);
 
   async function importImages() {
     if (!sampleId.trim() || !reviewerId.trim()) {
@@ -160,8 +163,9 @@ export default function MorphologyScreen() {
     finally { setBusy(false); }
   }
 
-  const selected = records.find((record) => record.id === selectedId) ?? null;
-  const annotatedObjects = records.reduce((sum, record) => sum + record.objects.length, 0);
+  const visibleRecords = sampleId.trim() ? records.filter((record) => record.pseudonymousSampleId === sampleId.trim()) : records;
+  const selected = visibleRecords.find((record) => record.id === selectedId) ?? null;
+  const annotatedObjects = visibleRecords.reduce((sum, record) => sum + record.objects.length, 0);
 
   return (
     <ScreenContainer>
@@ -189,14 +193,14 @@ export default function MorphologyScreen() {
         </View>
 
         <View style={styles.statsRow}>
-          <Stat label="الصور" value={String(records.length)} /><Stat label="وسوم الأجسام" value={String(annotatedObjects)} />
-          <Stat label="مراجعة معلّقة" value={String(records.filter((item) => item.adjudicationStatus !== "adjudicated").length)} />
+          <Stat label="الصور" value={String(visibleRecords.length)} /><Stat label="وسوم الأجسام" value={String(annotatedObjects)} />
+          <Stat label="مراجعة معلّقة" value={String(visibleRecords.filter((item) => item.adjudicationStatus !== "adjudicated").length)} />
         </View>
         <PrimaryButton label="تصدير Manifest لمجموعة البيانات" icon="file-download" onPress={exportDataset} loading={busy} />
         <Text style={styles.helper}>التصدير الحالي ينشئ ملف JSON للبيانات والوسوم. شارك ملفات الصور منفردة من زر المشاركة لكل صورة؛ لا يُنشأ ZIP بعد.</Text>
 
         <SectionTitle title="الصور المستوردة" detail="حدد صورة للوسم والمراجعة" />
-        {records.length === 0 ? <View style={styles.empty}><MaterialIcons name="image-search" size={34} color={COLORS.muted} /><Text style={styles.emptyText}>لم تتم إضافة صور بعد.</Text></View> : records.map((record) => (
+        {visibleRecords.length === 0 ? <View style={styles.empty}><MaterialIcons name="image-search" size={34} color={COLORS.muted} /><Text style={styles.emptyText}>لم تتم إضافة صور بعد.</Text></View> : visibleRecords.map((record) => (
           <View key={record.id} style={[styles.imageCard, selectedId === record.id && styles.imageCardSelected]}>
             <Pressable onPress={() => { setSelectedId(record.id); setSelectedObjectId(null); setReviewMode("primary"); }} style={styles.imageMain}>
               <Image source={{ uri: record.uri }} style={styles.thumbnail} resizeMode="contain" />

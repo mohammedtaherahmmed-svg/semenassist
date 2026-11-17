@@ -79,6 +79,7 @@ const config = {
     "expo-asset",
     "expo-router",
     "expo-document-picker",
+    ["expo-camera", { cameraPermission: "Allow SemenAssist to access the camera for microscopy capture.", microphonePermission: "Allow SemenAssist to record microscope videos with audio when needed." }],
     "expo-sharing",
     ["expo-audio", { microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone." }],
     ["expo-video", { supportsBackgroundPlayback: true, supportsPictureInPicture: true }],

@@ -50,6 +50,7 @@ export default function HomeScreen() {
               : "أدخل قيم المعايرة من مرجع ميكرومتري معلوم قبل أول تحليل، ولا تستخدم قيمًا افتراضية."}
           </Text>
           <PrimaryButton label="إنشاء عينة جديدة" icon="add-circle-outline" onPress={() => router.push("/sample/new")} />
+          <Pressable accessibilityRole="button" onPress={() => router.push("/capture")} style={styles.inlineAction}><MaterialIcons name="photo-camera" size={17} color="#9CE6DD" /><Text style={styles.inlineActionText}>التصوير المباشر واستيراد الصور والفيديو</Text><MaterialIcons name="arrow-back" size={16} color="#9CE6DD" /></Pressable>
           {!hasCalibration ? <Pressable accessibilityRole="button" onPress={() => router.push("/(tabs)/calibration")} style={styles.inlineAction}><Text style={styles.inlineActionText}>إتمام المعايرة الآن</Text><MaterialIcons name="arrow-back" size={16} color="#9CE6DD" /></Pressable> : null}
         </View>
 
