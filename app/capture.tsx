@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
   activeChip: { backgroundColor: "#EAF7F5", borderColor: COLORS.tealDark },
   chipText: { color: COLORS.navy, fontSize: 11, fontWeight: "700" },
   cameraFrame: { height: 330, borderRadius: 18, overflow: "hidden", backgroundColor: "#071521", position: "relative" },
-  crosshair: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  crosshair: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   crosshairBox: { width: "76%", height: "62%", borderColor: "rgba(255,255,255,0.65)", borderWidth: 1, borderRadius: 8 },
   cameraBadge: { position: "absolute", top: 10, right: 10 },
   controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 9 },
