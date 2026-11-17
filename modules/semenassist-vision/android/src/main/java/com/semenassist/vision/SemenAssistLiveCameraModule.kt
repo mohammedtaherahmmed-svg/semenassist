@@ -91,8 +91,8 @@ private class LiveCentroidTracker {
 }
 
 class SemenAssistLiveCameraView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
-  private val onAnalysis by EventDispatcher()
-  private val onCameraState by EventDispatcher()
+  val onAnalysis by EventDispatcher()
+  val onCameraState by EventDispatcher()
   private val previewView = PreviewView(context)
   private val analyzerExecutor = Executors.newSingleThreadExecutor()
   private val tracker = LiveCentroidTracker()
