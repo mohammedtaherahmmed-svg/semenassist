@@ -1,7 +1,7 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as DocumentPicker from "expo-document-picker";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -17,6 +17,7 @@ export default function CaptureScreen() {
   const [reviewerId, setReviewerId] = useState("TECH-01");
   const [preparation, setPreparation] = useState<"stained" | "unstained" | "unknown">("stained");
   const [recording, setRecording] = useState(false);
+  const [cameraMode, setCameraMode] = useState<"picture" | "video">("picture");
   const [busy, setBusy] = useState(false);
   const [facing, setFacing] = useState<"back" | "front">("back");
   const [cameraReady, setCameraReady] = useState(false);
@@ -82,17 +83,29 @@ export default function CaptureScreen() {
     } finally { setBusy(false); }
   }
 
-  async function startRecording() {
+  useEffect(() => {
+    if (!recording || cameraMode !== "video" || !cameraReady) return;
+    let mounted = true;
+    const start = async () => {
+      try {
+        const result = await cameraRef.current?.recordAsync({ maxDuration: 30 });
+        if (!mounted || !result?.uri) return;
+        router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: "0", sampleId: sampleId.trim() } });
+      } catch (error) {
+        if (mounted) Alert.alert("تعذر تسجيل الفيديو", error instanceof Error ? error.message : "تحقق من الكاميرا وحاول مرة أخرى.");
+      } finally {
+        if (mounted) { setRecording(false); setCameraMode("picture"); }
+      }
+    };
+    void start();
+    return () => { mounted = false; };
+  }, [recording, cameraMode, cameraReady, router, sampleId]);
+
+  function startRecording() {
     if (!cameraReady || !cameraRef.current || recording || busy) return;
     if (!sampleId.trim()) return Alert.alert("معرّف العينة مطلوب", "أدخل معرّف العينة قبل التصوير.");
+    setCameraMode("video");
     setRecording(true);
-    try {
-      const result = await cameraRef.current.recordAsync({ maxDuration: 30 });
-      if (!result?.uri) throw new Error("لم يتم حفظ ملف الفيديو.");
-      router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: "0", sampleId: sampleId.trim() } });
-    } catch (error) {
-      Alert.alert("تعذر تسجيل الفيديو", error instanceof Error ? error.message : "تحقق من الكاميرا وحاول مرة أخرى.");
-    } finally { setRecording(false); }
   }
 
   function stopRecording() {
@@ -112,7 +125,7 @@ export default function CaptureScreen() {
     </View>
     <SectionTitle title="كاميرا الهاتف" detail="استخدم الكاميرا الخلفية وثبّت الهاتف والعدسة والإضاءة قبل الالتقاط" />
     <View style={styles.cameraFrame}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mode="video" mute onCameraReady={() => setCameraReady(true)} />
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mode={cameraMode} mute onCameraReady={() => setCameraReady(true)} />
       <View pointerEvents="none" style={styles.crosshair}><View style={styles.crosshairBox} /></View>
       <View style={styles.cameraBadge}><StatusPill label={recording ? "يسجل الآن" : cameraReady ? "الكاميرا جاهزة" : "جارٍ تهيئة الكاميرا"} tone={recording ? "warning" : "success"} /></View>
     </View>
