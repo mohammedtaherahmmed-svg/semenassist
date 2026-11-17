@@ -10,6 +10,7 @@ import { getSample, upsertSample } from "@/lib/sample-store";
 import { formatDate, qualityLabelText, type AdvancedTestsRecord, type AiInterpretation, type MorphologyRecord, type SampleRecord, WHO_REFERENCE } from "@/lib/sample-types";
 import { trpc } from "@/lib/trpc";
 import { printReport, saveReportPdf, shareReportPdf } from "@/lib/report-export";
+import { loadMorphologyImages } from "@/lib/morphology-store";
 
 export default function SampleReportScreen() {
   const router = useRouter();
@@ -29,7 +30,29 @@ export default function SampleReportScreen() {
   const remoteReview = trpc.samples.review.useMutation();
   const { user } = useAuth();
 
-  useEffect(() => { if (!id) return; getSample(id).then((value) => { setSample(value ?? null); if (value) { setCorrectedConcentration(String(value.correctedConcentration ?? value.concentration)); setCorrectedProgressive(String(value.correctedProgressiveMotility ?? value.progressiveMotility)); setReviewerNote(value.reviewerNote ?? ""); setAiResult(value.aiInterpretation ?? null); setMorphology(value.morphology ?? emptyMorphology()); setAdvancedTests(value.advancedTests ?? { source: "manual" }); } setLoading(false); }); }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    Promise.all([getSample(id), loadMorphologyImages()]).then(([value, images]) => {
+      if (!active) return;
+      if (value) {
+        const linked = images.filter((image) => image.pseudonymousSampleId === value.id);
+        const morphologyImageSummary = {
+          imageCount: linked.length,
+          annotatedImageCount: linked.filter((image) => image.objects.length > 0).length,
+          annotatedObjectCount: linked.reduce((sum, image) => sum + image.objects.length, 0),
+          adjudicatedImageCount: linked.filter((image) => image.adjudicationStatus === "adjudicated").length,
+        };
+        setSample({ ...value, morphologyImageSummary });
+        setCorrectedConcentration(String(value.correctedConcentration ?? value.concentration));
+        setCorrectedProgressive(String(value.correctedProgressiveMotility ?? value.progressiveMotility));
+        setReviewerNote(value.reviewerNote ?? ""); setAiResult(value.aiInterpretation ?? null);
+        setMorphology(value.morphology ?? emptyMorphology()); setAdvancedTests(value.advancedTests ?? { source: "manual" });
+      } else setSample(null);
+      setLoading(false);
+    }).catch(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id]);
 
   async function saveReview() {
     if (!sample) return;
@@ -105,6 +128,8 @@ export default function SampleReportScreen() {
     {sample.qualityIssues.length ? <View style={styles.issuesCard}><Text style={styles.issuesTitle}>ما الذي يحد من الثقة؟</Text>{sample.qualityIssues.map((issue) => <View key={issue} style={styles.issueRow}><MaterialIcons name="priority-high" size={16} color={COLORS.warning} /><Text style={styles.issueText}>{issue}</Text></View>)}</View> : null}
     {sample.qualityMetrics ? <View style={styles.issuesCard}><Text style={styles.issuesTitle}>قياسات جودة الصورة · فحص هندسي</Text>{[["سطوع متوسط", sample.qualityMetrics.meanBrightness.toFixed(1), "/ 255"], ["التباين", sample.qualityMetrics.contrastStdDev.toFixed(1), "SD"], ["حدة الصورة", sample.qualityMetrics.sharpnessVariance.toFixed(1), "Laplacian variance"], ["تغطية فك الإطارات", sample.qualityMetrics.decodedFrameCoveragePct.toFixed(1), "%"]].map(([label, value, unit]) => <View key={label} style={styles.issueRow}><Text style={styles.issueText}>{label}: {value} {unit}</Text></View>)}<Text style={styles.metaHint}>مؤشرات هندسية تقريبية وحدودها إرشادية؛ لا تمثل احتمالًا سريريًا.</Text></View> : null}
 
+    <SectionTitle title="صور المورفولوجي المرتبطة بالعينة" detail="ملخص الوسوم البشرية المحفوظة محليًا لهذه العينة" />
+    <View style={styles.issuesCard}><Text style={styles.issuesTitle}>مجموعة الصور · {sample.morphologyImageSummary?.imageCount ?? 0} صورة</Text><Text style={styles.issueText}>صور عليها وسوم: {sample.morphologyImageSummary?.annotatedImageCount ?? 0} · أجسام موسومة: {sample.morphologyImageSummary?.annotatedObjectCount ?? 0} · مجموعات معتمدة بمراجعتين: {sample.morphologyImageSummary?.adjudicatedImageCount ?? 0}</Text><Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/(tabs)/morphology", params: { sampleId: sample.id } })} style={styles.retryAi}><MaterialIcons name="image-search" size={16} color={COLORS.tealDark} /><Text style={styles.retryText}>فتح صور هذه العينة للمراجعة</Text></Pressable></View>
     <SectionTitle title="المورفولوجي" detail="تحليل آلي موسّع للرأس والذيل والقطعة الوسطى + مراجعة بشرية" />
     <MorphologyEditor value={morphology} onChange={setMorphology} />
     <AdvancedTestsEditor value={advancedTests} onChange={setAdvancedTests} />
