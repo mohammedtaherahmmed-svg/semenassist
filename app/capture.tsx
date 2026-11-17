@@ -14,6 +14,7 @@ import { loadCalibration, type CalibrationRecord } from "@/lib/sample-store";
 export default function CaptureScreen() {
   const router = useRouter();
   const cameraRef = useRef<CameraView>(null);
+  const recordingSampleIdRef = useRef("");
   const [permission, requestPermission] = useCameraPermissions();
   const [sampleId, setSampleId] = useState(`SEM-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`);
   const [reviewerId, setReviewerId] = useState("TECH-01");
@@ -100,7 +101,7 @@ export default function CaptureScreen() {
         if (!mounted || !result?.uri) return;
         const videoInfo = await FileSystem.getInfoAsync(result.uri);
         const videoSizeMb = videoInfo.exists && "size" in videoInfo ? Number(((videoInfo.size ?? 0) / 1_000_000).toFixed(2)) : 0;
-        router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: String(videoSizeMb), sampleId: sampleId.trim() } });
+        router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: String(videoSizeMb), sampleId: recordingSampleIdRef.current } });
       } catch (error) {
         if (mounted) Alert.alert("تعذر تسجيل الفيديو", error instanceof Error ? error.message : "تحقق من الكاميرا وحاول مرة أخرى.");
       } finally {
@@ -109,11 +110,12 @@ export default function CaptureScreen() {
     };
     void start();
     return () => { mounted = false; };
-  }, [recording, cameraMode, cameraReady, router, sampleId]);
+  }, [recording, cameraMode, cameraReady, router]);
 
   function startRecording() {
     if (!cameraReady || !cameraRef.current || recording || busy) return;
     if (!sampleId.trim()) return Alert.alert("معرّف العينة مطلوب", "أدخل معرّف العينة قبل التصوير.");
+    recordingSampleIdRef.current = sampleId.trim();
     setCameraMode("video");
     setRecording(true);
   }
