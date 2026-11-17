@@ -48,6 +48,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: "الرئيسية", tabBarIcon: ({ color }) => <IconSymbol size={22} name="house.fill" color={color} /> }} />
+      <Tabs.Screen name="casa" options={{ title: "CASA", tabBarIcon: ({ color }) => <IconSymbol size={22} name="analytics" color={color} /> }} />
       <Tabs.Screen name="samples" options={{ title: "العينات", tabBarIcon: ({ color }) => <IconSymbol size={22} name="doc.text.fill" color={color} /> }} />
       <Tabs.Screen name="calibration" options={{ title: "المعايرة", tabBarIcon: ({ color }) => <IconSymbol size={22} name="scope" color={color} /> }} />
       <Tabs.Screen name="validation" options={{ title: "التحقق", tabBarIcon: ({ color }) => <IconSymbol size={22} name="checkmark.seal.fill" color={color} /> }} />
