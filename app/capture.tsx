@@ -65,7 +65,7 @@ export default function CaptureScreen() {
       const importedAt = new Date().toISOString();
       const records: MorphologyImageRecord[] = accepted.map((asset, index) => ({
         id: `MOR-${Date.now()}-${index}`, uri: asset.uri, fileName: asset.name || `microscopy-${index + 1}`,
-        fileSizeBytes: asset.size ?? 0, importedAt, preparation, objectiveMagnification: null, pixelSizeUm: null,
+        fileSizeBytes: asset.size ?? 0, importedAt, preparation, objectiveMagnification: null,
         imageWidthPx: null, imageHeightPx: null, pixelSizeUm: calibration?.micronsPerPixel ?? null, microscopeId: calibration?.setupLabel,
         pseudonymousSampleId: sampleId.trim(), reviewerId: reviewerId.trim(),
         adjudicationStatus: "single-review", objects: [],
