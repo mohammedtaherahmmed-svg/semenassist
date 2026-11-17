@@ -8,6 +8,7 @@ on:
       - feature/kalman-hungarian-tracking
       - feature/ground-truth-benchmark
       - feature/casa-complete-validation-v2
+      - feature/android-camera-capture
   pull_request:
     branches:
       - main
