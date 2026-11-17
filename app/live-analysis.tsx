@@ -1,3 +1,4 @@
+import React from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useCameraPermissions } from "expo-camera";
 import { useEffect, useState } from "react";
@@ -61,7 +62,7 @@ export default function LiveAnalysisScreen() {
         <MedicalBanner compact />
         <View style={styles.statusRow}>
           <StatusPill label={cameraState === "ready" ? "الكاميرا تعمل" : cameraState === "error" ? "تعذر تشغيل الكاميرا" : "جارٍ تشغيل الكاميرا"} tone={cameraState === "ready" ? "success" : cameraState === "error" ? "warning" : "neutral"} />
-          <StatusPill label={profile.label} tone="info" />
+          <StatusPill label={profile.label} tone="teal" />
         </View>
         <View style={styles.cameraFrame}>
           <LiveCameraView
