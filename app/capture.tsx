@@ -136,6 +136,8 @@ export default function CaptureScreen() {
       <View style={styles.row}><Text style={styles.label}>تحضير العينة</Text>{(["stained", "unstained", "unknown"] as const).map((value) => <Pressable key={value} onPress={() => setPreparation(value)} style={[styles.chip, preparation === value && styles.activeChip]}><Text style={styles.chipText}>{value === "stained" ? "مصبوغة" : value === "unstained" ? "غير مصبوغة" : "غير محدد"}</Text></Pressable>)}</View>
     </View>
     <View style={styles.calibrationNotice}><MaterialIcons name={calibration ? "verified" : "warning-amber"} size={17} color={calibration ? COLORS.success : COLORS.warning} /><Text style={styles.body}>{calibration ? `سيتم ربط الصور بمعايرة ${calibration.micronsPerPixel} µm/px · ${calibration.setupLabel}` : "لا توجد معايرة محفوظة؛ ستُحفظ الصور دون مقياس بكسلي، ولا يمكن استخدامها لقياسات طولية موثوقة."}</Text></View>
+    <SectionTitle title="التحليل الحي للحركة" detail="افتح الكاميرا مع تتبع لحظي تجريبي على الجهاز" />
+    <SecondaryButton label="فتح Live Sperm Tracking" icon="track-changes" onPress={() => router.push("/live-analysis" as never)} />
     <SectionTitle title="كاميرا الهاتف" detail="استخدم الكاميرا الخلفية وثبّت الهاتف والعدسة والإضاءة قبل الالتقاط" />
     <View style={styles.cameraFrame}>
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mode={cameraMode} mute onCameraReady={() => setCameraReady(true)} />

@@ -11,3 +11,10 @@ android {
     versionName "1.0.0"
   }
 }
+
+dependencies {
+  // CameraX provides a lifecycle-bound preview and CPU-accessible ImageAnalysis frames.
+  implementation "androidx.camera:camera-camera2:1.4.2"
+  implementation "androidx.camera:camera-lifecycle:1.4.2"
+  implementation "androidx.camera:camera-view:1.4.2"
+}

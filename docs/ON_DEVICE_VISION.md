@@ -156,3 +156,22 @@ The Android Morphology tab now supports:
 Training eligibility is intentionally strict: only adjudicated records with calibrated pixel scale, a distinct second reviewer, matching primary/secondary categorical labels, and valid expert polygons are included. The train/validation/test partition is grouped by sample ID to prevent images from one sample leaking across splits.
 
 No pretrained or locally trained SemenAssist morphology model is shipped by this change. A real model requires a sufficiently large, representative, expert-labelled dataset, held-out sample-level evaluation, inter-rater analysis, external validation across microscopes/preparations, and separate clinical/regulatory review. The app currently stores polygon point annotations; it does not yet produce raster mask PNGs or independently calculate mask Dice/IoU.
+
+
+## Live Android camera pipeline (research preview)
+
+The Android app now includes a CameraX-based native preview and ImageAnalysis view. It analyzes camera frames on-device using a lightweight grayscale connected-component candidate detector and a low-latency centroid association tracker. The view emits frame timestamps, measured analysis FPS, candidate centroids, temporary track IDs, track lengths, and pixel-space speed for a live overlay.
+
+The live path is deliberately labelled **classical-CV research preview**. It is not a trained sperm detector, and its connected-component candidates can include debris, artifacts, and non-sperm objects. Live IDs are provisional and can fragment or switch during crossings, blur, low contrast, and occlusion. The existing saved-video CASA path remains separate and retains its Kalman/Hungarian implementation.
+
+A device-capability probe reads Android RAM, CPU core count, API level, supported ABIs, camera availability, and thermal status. The app selects a conservative analysis interval and input resolution tier. This is workload adaptation, not a guarantee that every phone sustains a particular FPS; the measured FPS and processing time are reported to the UI.
+
+### Morphology status
+
+The existing expert polygon-annotation workflow remains the source of morphology ground truth. No trained SemenAssist morphology weights are bundled. The live camera feature does not infer Kruger morphology, normal forms, TZI, or SDI. Automated morphology inference remains gated on a representative, expert-adjudicated dataset, held-out sample-level evaluation, and model packaging/verification. Stained, focused, calibrated high-resolution still images remain the preferred input for morphology research.
+
+### Device compatibility
+
+CameraX Preview + ImageAnalysis are bound to the Android activity lifecycle and use KEEP_ONLY_LATEST backpressure. The analysis workload adapts among performance, balanced, and efficiency profiles; the preview can continue while analysis samples frames less frequently. Unsupported devices or missing camera permission show an explicit state rather than silently falling back to a false analysis result.
+
+The feature requires a native Android build (it is not available in Expo Go). Test on physical devices from multiple vendors and Android API levels before making compatibility or clinical-performance claims.
