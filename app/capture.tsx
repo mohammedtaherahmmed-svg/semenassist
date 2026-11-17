@@ -9,6 +9,7 @@ import { useRouter } from "expo-router";
 import { AppHeader, COLORS, MedicalBanner, PrimaryButton, SecondaryButton, SectionTitle, StatusPill } from "@/components/clinical-ui";
 import { ScreenContainer } from "@/components/screen-container";
 import { addMorphologyImages, type MorphologyImageRecord } from "@/lib/morphology-store";
+import { loadCalibration, type CalibrationRecord } from "@/lib/sample-store";
 
 export default function CaptureScreen() {
   const router = useRouter();
@@ -22,13 +23,17 @@ export default function CaptureScreen() {
   const [busy, setBusy] = useState(false);
   const [facing, setFacing] = useState<"back" | "front">("back");
   const [cameraReady, setCameraReady] = useState(false);
+  const [calibration, setCalibration] = useState<CalibrationRecord | null>(null);
+
+  useEffect(() => { void loadCalibration().then(setCalibration); }, []);
 
   async function saveImage(uri: string, fileName: string, sizeBytes: number, width: number | null, height: number | null) {
     if (!sampleId.trim() || !reviewerId.trim()) throw new Error("أدخل معرّف العينة ومعرّف المراجع أولًا.");
     const record: MorphologyImageRecord = {
       id: `MOR-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       uri, fileName, fileSizeBytes: sizeBytes, importedAt: new Date().toISOString(), preparation,
-      objectiveMagnification: null, pixelSizeUm: null, imageWidthPx: width, imageHeightPx: height,
+      objectiveMagnification: null, pixelSizeUm: calibration?.micronsPerPixel ?? null, imageWidthPx: width, imageHeightPx: height,
+      microscopeId: calibration?.setupLabel,
       pseudonymousSampleId: sampleId.trim(), reviewerId: reviewerId.trim(),
       adjudicationStatus: "single-review", objects: [],
     };
@@ -60,7 +65,8 @@ export default function CaptureScreen() {
       const records: MorphologyImageRecord[] = accepted.map((asset, index) => ({
         id: `MOR-${Date.now()}-${index}`, uri: asset.uri, fileName: asset.name || `microscopy-${index + 1}`,
         fileSizeBytes: asset.size ?? 0, importedAt, preparation, objectiveMagnification: null, pixelSizeUm: null,
-        imageWidthPx: null, imageHeightPx: null, pseudonymousSampleId: sampleId.trim(), reviewerId: reviewerId.trim(),
+        imageWidthPx: null, imageHeightPx: null, pixelSizeUm: calibration?.micronsPerPixel ?? null, microscopeId: calibration?.setupLabel,
+        pseudonymousSampleId: sampleId.trim(), reviewerId: reviewerId.trim(),
         adjudicationStatus: "single-review", objects: [],
       }));
       await addMorphologyImages(records);
@@ -127,6 +133,7 @@ export default function CaptureScreen() {
       <Field label="معرّف المراجع" value={reviewerId} onChangeText={setReviewerId} />
       <View style={styles.row}><Text style={styles.label}>تحضير العينة</Text>{(["stained", "unstained", "unknown"] as const).map((value) => <Pressable key={value} onPress={() => setPreparation(value)} style={[styles.chip, preparation === value && styles.activeChip]}><Text style={styles.chipText}>{value === "stained" ? "مصبوغة" : value === "unstained" ? "غير مصبوغة" : "غير محدد"}</Text></Pressable>)}</View>
     </View>
+    <View style={styles.calibrationNotice}><MaterialIcons name={calibration ? "verified" : "warning-amber"} size={17} color={calibration ? COLORS.success : COLORS.warning} /><Text style={styles.body}>{calibration ? `سيتم ربط الصور بمعايرة ${calibration.micronsPerPixel} µm/px · ${calibration.setupLabel}` : "لا توجد معايرة محفوظة؛ ستُحفظ الصور دون مقياس بكسلي، ولا يمكن استخدامها لقياسات طولية موثوقة."}</Text></View>
     <SectionTitle title="كاميرا الهاتف" detail="استخدم الكاميرا الخلفية وثبّت الهاتف والعدسة والإضاءة قبل الالتقاط" />
     <View style={styles.cameraFrame}>
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} mode={cameraMode} mute onCameraReady={() => setCameraReady(true)} />
@@ -162,6 +169,7 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: COLORS.line },
   activeChip: { backgroundColor: "#EAF7F5", borderColor: COLORS.tealDark },
   chipText: { color: COLORS.navy, fontSize: 11, fontWeight: "700" },
+  calibrationNotice: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#F0F7FA", padding: 11, borderRadius: 12 },
   cameraFrame: { height: 330, borderRadius: 18, overflow: "hidden", backgroundColor: "#071521", position: "relative" },
   crosshair: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center" },
   crosshairBox: { width: "76%", height: "62%", borderColor: "rgba(255,255,255,0.65)", borderWidth: 1, borderRadius: 8 },
