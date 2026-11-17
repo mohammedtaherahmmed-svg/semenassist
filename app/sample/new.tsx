@@ -1,6 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as DocumentPicker from "expo-document-picker";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -17,6 +17,7 @@ type Stage = "idle" | "uploading" | "processing" | "saving";
 
 export default function NewSampleScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ videoUri?: string; videoName?: string; videoSizeMb?: string; sampleId?: string }>();
   const [sampleId, setSampleId] = useState(() => `SEM-2026-${String(Math.floor(Math.random() * 800) + 120)}`);
   const [sampleType, setSampleType] = useState("عينة كاملة");
   const [collectedAt, setCollectedAt] = useState(new Date().toISOString());
@@ -32,6 +33,13 @@ export default function NewSampleScreen() {
   const saveRemote = trpc.samples.save.useMutation();
 
   useEffect(() => { loadCalibration().then(setCalibration); }, []);
+  useEffect(() => {
+    if (!params.videoUri) return;
+    const name = params.videoName || "microscope-capture.mp4";
+    const sizeMb = Number(params.videoSizeMb || 0);
+    setVideo({ name, sizeMb: Number.isFinite(sizeMb) ? sizeMb : 0, durationSec: 0, uri: params.videoUri });
+    if (params.sampleId) setSampleId(params.sampleId);
+  }, [params.videoUri, params.videoName, params.videoSizeMb, params.sampleId]);
 
   async function chooseVideo() {
     setError("");
