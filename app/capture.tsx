@@ -1,5 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -40,7 +41,8 @@ export default function CaptureScreen() {
     try {
       const picture = await cameraRef.current.takePictureAsync({ quality: 0.92, skipProcessing: false });
       if (!picture?.uri) throw new Error("لم تُنتج الكاميرا ملف صورة.");
-      await saveImage(picture.uri, `capture-${Date.now()}.jpg`, 0, picture.width ?? null, picture.height ?? null);
+      const pictureInfo = await FileSystem.getInfoAsync(picture.uri);
+      await saveImage(picture.uri, `capture-${Date.now()}.jpg`, pictureInfo.exists && "size" in pictureInfo ? pictureInfo.size ?? 0 : 0, picture.width ?? null, picture.height ?? null);
       Alert.alert("تم حفظ الصورة", "أُضيفت الصورة إلى مجموعة Morphology المحلية وربطت بمعرّف العينة. يلزم إدخال حجم الملف/التحقق منه قبل اعتماد بيانات المجموعة.");
     } catch (error) {
       Alert.alert("تعذر التقاط الصورة", error instanceof Error ? error.message : "حاول مرة أخرى.");
@@ -90,7 +92,9 @@ export default function CaptureScreen() {
       try {
         const result = await cameraRef.current?.recordAsync({ maxDuration: 30 });
         if (!mounted || !result?.uri) return;
-        router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: "0", sampleId: sampleId.trim() } });
+        const videoInfo = await FileSystem.getInfoAsync(result.uri);
+        const videoSizeMb = videoInfo.exists && "size" in videoInfo ? Number(((videoInfo.size ?? 0) / 1_000_000).toFixed(2)) : 0;
+        router.push({ pathname: "/sample/new", params: { videoUri: result.uri, videoName: `camera-${Date.now()}.mp4`, videoSizeMb: String(videoSizeMb), sampleId: sampleId.trim() } });
       } catch (error) {
         if (mounted) Alert.alert("تعذر تسجيل الفيديو", error instanceof Error ? error.message : "تحقق من الكاميرا وحاول مرة أخرى.");
       } finally {
