@@ -18,7 +18,7 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import expo.modules.kotlin.AppContext
-import expo.modules.kotlin.events.EventDispatcher
+import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.views.ExpoView
