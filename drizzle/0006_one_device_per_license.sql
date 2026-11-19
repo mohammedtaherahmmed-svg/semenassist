@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `licensed_devices_license_uq` ON `licensed_devices` (`licenseId`);

@@ -6,6 +6,7 @@ import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, router, supervisorProcedure, publicProcedure } from "./_core/trpc";
 import { appendAuditLog, createCalibrationProfile, getLaboratoryMembership, getSampleReport, listAuditLogs, listCalibrationProfiles, listSampleReports, listUserLaboratoryIds, recordAnalysisRun, recordHumanReview, saveBenchmarkRun, saveSampleReport, setUserRole } from "./db";
+import { activateDevice, createActivationChallenge, getLatestAppRelease, issueDeviceLicense, listDeviceLicenses, publishAppRelease, revokeDeviceLicense, validateLicensedDevice } from "./licensing";
 
 const reportInput = z.object({
   sampleId: z.string().min(1),
@@ -66,6 +67,62 @@ function extractText(content: unknown) {
 
 export const appRouter = router({
   system: systemRouter,
+  licensing: router({
+    challenge: publicProcedure.input(z.object({
+      installationId: z.string().min(16).max(128),
+    })).mutation(({ input }) => createActivationChallenge(input.installationId)),
+    activate: publicProcedure.input(z.object({
+      serial: z.string().min(12).max(64),
+      installationId: z.string().min(16).max(128),
+      publicKeyPem: z.string().min(80).max(4096),
+      challengeId: z.string().length(48),
+      signature: z.string().min(80).max(1024),
+      appVersion: z.string().max(32).optional(),
+      versionCode: z.number().int().positive().optional(),
+    })).mutation(({ input }) => activateDevice(input)),
+    validate: publicProcedure.input(z.object({
+      installationId: z.string().min(16).max(128),
+      challengeId: z.string().length(48),
+      signature: z.string().min(80).max(1024),
+    })).mutation(({ input }) => validateLicensedDevice(input)),
+    admin: router({
+      issue: adminProcedure.input(z.object({
+        expiresAt: z.coerce.date().optional(),
+        notes: z.string().max(2000).optional(),
+      })).mutation(async ({ input, ctx }) => {
+        const result = await issueDeviceLicense({ ...input, createdBy: ctx.user.openId });
+        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.issue", entityType: "device_license", entityId: "new", details: JSON.stringify({ expiresAt: result.expiresAt }) });
+        return result;
+      }),
+      list: adminProcedure.query(() => listDeviceLicenses()),
+      revoke: adminProcedure.input(z.object({
+        licenseId: z.number().int().positive(),
+      })).mutation(async ({ input, ctx }) => {
+        const result = await revokeDeviceLicense(input.licenseId);
+        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.revoke", entityType: "device_license", entityId: String(input.licenseId) });
+        return result;
+      }),
+      publishRelease: adminProcedure.input(z.object({
+        version: z.string().regex(/^\\d+\\.\\d+\\.\\d+([+-][a-zA-Z0-9.-]+)?$/).max(32),
+        versionCode: z.number().int().positive(),
+        channel: z.enum(["stable", "beta"]),
+        minSupportedVersionCode: z.number().int().positive(),
+        mandatory: z.boolean(),
+        apkUrl: z.string().url().max(1024),
+        sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+        fileSizeBytes: z.number().int().positive(),
+        releaseNotes: z.string().max(5000).optional(),
+      })).mutation(async ({ input, ctx }) => {
+        const result = await publishAppRelease(input);
+        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "release.publish", entityType: "app_release", entityId: String(input.versionCode), details: JSON.stringify({ version: input.version, channel: input.channel }) });
+        return result;
+      }),
+    }),
+    latestRelease: publicProcedure.input(z.object({
+      currentVersionCode: z.number().int().nonnegative(),
+      channel: z.enum(["stable", "beta"]).default("stable"),
+    })).query(({ input }) => getLatestAppRelease(input)),
+  }),
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

@@ -1,9 +1,18 @@
 package com.semenassist.vision
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.Signature
+import java.util.UUID
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlin.math.abs
@@ -80,8 +89,52 @@ private data class Track(
 )
 
 class SemenAssistVisionModule : Module() {
+  private val licenseKeyAlias = "semenassist.device.license.v1"
+
+  private fun getOrCreateLicenseKeyPair(): KeyPair {
+    val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    if (!keyStore.containsAlias(licenseKeyAlias)) {
+      val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
+      val spec = KeyGenParameterSpec.Builder(
+        licenseKeyAlias,
+        KeyProperties.PURPOSE_SIGN
+      )
+        .setKeySize(2048)
+        .setDigests(KeyProperties.DIGEST_SHA256)
+        .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+        .setUserAuthenticationRequired(false)
+        .build()
+      generator.initialize(spec)
+      generator.generateKeyPair()
+    }
+    val privateKey = keyStore.getKey(licenseKeyAlias, null) as java.security.PrivateKey
+    val publicKey = keyStore.getCertificate(licenseKeyAlias).publicKey
+    return KeyPair(publicKey, privateKey)
+  }
+
   override fun definition() = ModuleDefinition {
     Name("SemenAssistVision")
+
+    AsyncFunction("getLicenseIdentity") {
+      val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
+      val preferences = context.getSharedPreferences("semenassist_license", Context.MODE_PRIVATE)
+      val installationId = preferences.getString("installation_id", null) ?: UUID.randomUUID().toString().also {
+        preferences.edit().putString("installation_id", it).apply()
+      }
+      val publicKeyPem = getOrCreateLicenseKeyPair().public.encoded.let { encoded ->
+        val body = Base64.encodeToString(encoded, Base64.NO_WRAP).chunked(64).joinToString("\n")
+        "-----BEGIN PUBLIC KEY-----\n$body\n-----END PUBLIC KEY-----"
+      }
+      mapOf("installationId" to installationId, "publicKeyPem" to publicKeyPem, "keyAlgorithm" to "RSA-2048")
+    }
+
+    AsyncFunction("signLicenseChallenge") { nonceBase64Url: String ->
+      val nonce = Base64.decode(nonceBase64Url, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+      val signer = Signature.getInstance("SHA256withRSA")
+      signer.initSign(getOrCreateLicenseKeyPair().private)
+      signer.update(nonce)
+      Base64.encodeToString(signer.sign(), Base64.NO_WRAP)
+    }
 
     AsyncFunction("analyzeVideo") { videoUri: String, micronsPerPixel: Double, chamberDepth: Double, countingAreaMm2: Double, dilutionFactor: Double ->
       require(micronsPerPixel.isFinite() && micronsPerPixel > 0.0) { "قيمة المعايرة غير صالحة." }
