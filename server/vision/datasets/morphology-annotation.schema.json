@@ -132,6 +132,17 @@
               }
             }
           },
+          "adjudication": {
+            "type": ["object", "null"],
+            "properties": {
+              "reviewer_id": {"type": "string", "minLength": 1},
+              "adjudicated_at": {"type": "string"},
+              "note": {"type": "string", "minLength": 5},
+              "labels": {"$ref": "#/$defs/labels"},
+              "masks": {"$ref": "#/$defs/masks"}
+            },
+            "required": ["reviewer_id", "note", "labels", "masks"]
+          },
           "masks": {
             "$ref": "#/$defs/masks"
           }
