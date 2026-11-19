@@ -76,14 +76,14 @@ export const appRouter = router({
       installationId: z.string().min(16).max(128),
       publicKeyPem: z.string().min(80).max(4096),
       challengeId: z.string().length(48),
-      signature: z.string().min(80).max(256),
+      signature: z.string().min(80).max(1024),
       appVersion: z.string().max(32).optional(),
       versionCode: z.number().int().positive().optional(),
     })).mutation(({ input }) => activateDevice(input)),
     validate: publicProcedure.input(z.object({
       installationId: z.string().min(16).max(128),
       challengeId: z.string().length(48),
-      signature: z.string().min(80).max(256),
+      signature: z.string().min(80).max(1024),
     })).mutation(({ input }) => validateLicensedDevice(input)),
     admin: router({
       issue: adminProcedure.input(z.object({
