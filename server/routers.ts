@@ -91,7 +91,7 @@ export const appRouter = router({
         notes: z.string().max(2000).optional(),
       })).mutation(async ({ input, ctx }) => {
         const result = await issueDeviceLicense({ ...input, createdBy: ctx.user.openId });
-        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.issue", entityType: "device_license", entityId: "new", details: JSON.stringify({ expiresAt: result.expiresAt }) });
+        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.issue", entityType: "device_license", entityId: String(result.licenseId), details: JSON.stringify({ expiresAt: result.expiresAt }) });
         return result;
       }),
       list: adminProcedure.query(() => listDeviceLicenses()),
