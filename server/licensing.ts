@@ -13,6 +13,7 @@ import {
   deviceActivationChallenges,
   deviceLicenses,
   licensedDevices,
+  licenseEvents,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
@@ -49,7 +50,7 @@ export async function issueDeviceLicense(input: {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
   const serial = createLicenseSerial();
-  await db.insert(deviceLicenses).values({
+  const inserted = await db.insert(deviceLicenses).values({
     serialHash: serialDigest(serial),
     status: "active",
     maxDevices: 1,
@@ -57,7 +58,9 @@ export async function issueDeviceLicense(input: {
     createdBy: input.createdBy,
     notes: input.notes,
   });
-  return { serial, maxDevices: 1, expiresAt: input.expiresAt ?? null };
+  const licenseId = Number((inserted as unknown as { insertId?: number }).insertId ?? 0);
+  await db.insert(licenseEvents).values({ licenseId, actorOpenId: input.createdBy, eventType: "license.issued" });
+  return { serial, licenseId, maxDevices: 1, expiresAt: input.expiresAt ?? null };
 }
 
 export async function createActivationChallenge(installationId: string) {
@@ -142,6 +145,7 @@ export async function activateDevice(input: {
       versionCode: input.versionCode,
       lastValidatedAt: new Date(),
     }).where(eq(licensedDevices.id, existing[0].id));
+    await db.insert(licenseEvents).values({ licenseId: license.id, deviceId: existing[0].id, eventType: "device.activation.revalidated" });
     return { valid: true, deviceId: existing[0].id, licenseId: license.id };
   }
 
@@ -157,7 +161,9 @@ export async function activateDevice(input: {
       status: "active",
       lastValidatedAt: new Date(),
     });
-    return { valid: true, deviceId: Number((inserted as unknown as { insertId?: number }).insertId ?? 0), licenseId: license.id };
+    const deviceId = Number((inserted as unknown as { insertId?: number }).insertId ?? 0);
+    await db.insert(licenseEvents).values({ licenseId: license.id, deviceId, eventType: "device.activated" });
+    return { valid: true, deviceId, licenseId: license.id };
   } catch {
     // The unique licenseId constraint is the final race-safe one-device guard.
     throw new Error("هذا الترخيص مرتبط بالفعل بجهاز آخر");
@@ -209,6 +215,7 @@ export async function validateLicensedDevice(input: {
   }
   await db.update(licensedDevices).set({ lastValidatedAt: new Date() })
     .where(eq(licensedDevices.id, device.id));
+  await db.insert(licenseEvents).values({ licenseId: license.id, deviceId: device.id, eventType: "device.validated" });
   return { valid: true, licenseId: license.id, expiresAt: license.expiresAt ?? null };
 }
 
@@ -217,6 +224,7 @@ export async function revokeDeviceLicense(licenseId: number) {
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
   await db.update(deviceLicenses).set({ status: "revoked" }).where(eq(deviceLicenses.id, licenseId));
   await db.update(licensedDevices).set({ status: "revoked" }).where(eq(licensedDevices.licenseId, licenseId));
+  await db.insert(licenseEvents).values({ licenseId, eventType: "license.revoked" });
   return { success: true };
 }
 
@@ -274,6 +282,13 @@ export async function publishAppRelease(input: {
   if (!/^https:\/\//i.test(input.apkUrl)) throw new Error("رابط APK يجب أن يستخدم HTTPS");
   if (!/^[a-f0-9]{64}$/i.test(input.sha256)) throw new Error("SHA-256 غير صالح");
   if (!Number.isSafeInteger(input.fileSizeBytes) || input.fileSizeBytes <= 0) throw new Error("حجم APK غير صالح");
+  const currentRows = await db.select().from(appReleases).where(and(
+    eq(appReleases.channel, input.channel),
+    eq(appReleases.isActive, 1),
+  )).orderBy(desc(appReleases.versionCode)).limit(1);
+  if (currentRows[0] && input.versionCode <= currentRows[0].versionCode) {
+    throw new Error("versionCode يجب أن يكون أكبر من آخر إصدار منشور في القناة");
+  }
   const manifest = { ...input, mandatory: input.mandatory };
   const privateKeyPem = process.env.UPDATE_MANIFEST_PRIVATE_KEY;
   if (!privateKeyPem) throw new Error("UPDATE_MANIFEST_PRIVATE_KEY غير مضبوط على الخادم");
