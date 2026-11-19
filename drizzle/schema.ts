@@ -246,3 +246,17 @@ export const licenseEvents = mysqlTable("license_events", {
   deviceIdx: index("license_events_device_idx").on(table.deviceId),
   createdIdx: index("license_events_created_idx").on(table.createdAt),
 }));
+
+
+export const deviceActivationChallenges = mysqlTable("device_activation_challenges", {
+  id: int("id").autoincrement().primaryKey(),
+  challengeId: varchar("challengeId", { length: 64 }).notNull(),
+  installationId: varchar("installationId", { length: 128 }).notNull(),
+  nonce: varchar("nonce", { length: 128 }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  consumedAt: timestamp("consumedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  challengeUnique: uniqueIndex("device_activation_challenge_id_uq").on(table.challengeId),
+  installationIdx: index("device_activation_challenge_installation_idx").on(table.installationId),
+}));
