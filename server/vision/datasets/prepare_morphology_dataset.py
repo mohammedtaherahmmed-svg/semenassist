@@ -21,6 +21,9 @@ def sample_split(sample_id: str) -> str:
 def labels_match(primary: dict, secondary: dict) -> bool:
     return all(primary.get(key) == secondary.get(key) for key in ("head_shape", "tail_status", "overlap", "debris"))
 
+def labels_disagree(primary: dict, secondary: dict) -> bool:
+    return not labels_match(primary, secondary)
+
 
 def valid_polygon(mask: dict) -> bool:
     points = mask.get("points_normalized")
@@ -41,6 +44,7 @@ def prepare(manifest_path: Path, output_dir: Path) -> dict:
     root = manifest_path.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     copied = {"train": 0, "validation": 0, "test": 0}
+    eligible_object_count = 0
     skipped = []
     sample_assignments = {}
     for index, item in enumerate(images):
@@ -61,21 +65,35 @@ def prepare(manifest_path: Path, output_dir: Path) -> dict:
             skipped.append({"sample_id": sample_id, "reason": "missing calibrated pixel_size_um"})
             continue
         yolo_lines = []
+        eligible_objects = 0
         for obj in item.get("objects", []):
             primary = obj.get("labels", {})
             second = obj.get("second_review")
             if not second or not second.get("reviewer_id") or second["reviewer_id"] == obj.get("reviewer_id"):
                 continue
-            if not labels_match(primary, second.get("labels", {})):
-                continue
-            for mask in obj.get("masks", []):
-                if not valid_polygon(mask):
+            secondary = second.get("labels", {})
+            adjudication = obj.get("adjudication")
+            has_disagreement = labels_disagree(primary, secondary)
+            # Never resolve disagreements by silently preferring reviewer one's labels.
+            if has_disagreement:
+                if not adjudication or not adjudication.get("reviewer_id") or adjudication["reviewer_id"] in {obj.get("reviewer_id"), second.get("reviewer_id")}:
                     continue
+                if len(str(adjudication.get("note", "")).strip()) < 5:
+                    continue
+                masks = adjudication.get("masks", [])
+            else:
+                masks = obj.get("masks", [])
+            valid_object_masks = [mask for mask in masks if valid_polygon(mask)]
+            if not valid_object_masks:
+                continue
+            eligible_objects += 1
+            for mask in valid_object_masks:
                 coords = " ".join(f"{p['x']:.6f} {p['y']:.6f}" for p in mask["points_normalized"])
                 yolo_lines.append(f"{REGION_CLASS[mask['region']]} {coords}")
         if not yolo_lines:
-            skipped.append({"sample_id": sample_id, "reason": "no valid expert polygon masks with matching dual review"})
+            skipped.append({"sample_id": sample_id, "reason": "no valid masks with two independent reviews and required third-expert adjudication"})
             continue
+        eligible_object_count += eligible_objects
         image_name = f"{sample_id}_{source.name}".replace("/", "_")
         image_out = output_dir / "images" / split / image_name
         label_out = output_dir / "labels" / split / (Path(image_name).stem + ".txt")
@@ -95,6 +113,7 @@ def prepare(manifest_path: Path, output_dir: Path) -> dict:
         "split_policy": "sha256(sample_id), grouped by sample_id",
         "sample_splits": sample_assignments,
         "eligible_images": copied,
+        "eligible_objects_total": eligible_object_count,
         "skipped": skipped,
         "training_ready": sum(copied.values()) > 0 and all(copied.values()),
         "clinical_validation": "not_performed",
