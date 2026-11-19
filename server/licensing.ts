@@ -313,7 +313,11 @@ export async function publishAppRelease(input: {
   const manifest = { ...input, mandatory: input.mandatory };
   const privateKeyPem = process.env.UPDATE_MANIFEST_PRIVATE_KEY;
   if (!privateKeyPem) throw new Error("UPDATE_MANIFEST_PRIVATE_KEY غير مضبوط على الخادم");
-  const signature = sign("sha256", Buffer.from(canonicalManifest(manifest)), createPrivateKey(normalizePem(privateKeyPem))).toString("base64");
+  const signingKey = createPrivateKey(normalizePem(privateKeyPem));
+  if (signingKey.asymmetricKeyType !== "rsa" || Number(signingKey.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) {
+    throw new Error("مفتاح توقيع التحديث يجب أن يكون RSA بطول 2048 بت على الأقل");
+  }
+  const signature = sign("sha256", Buffer.from(canonicalManifest(manifest)), signingKey).toString("base64");
   await db.update(appReleases).set({ isActive: 0 }).where(eq(appReleases.channel, input.channel));
   await db.insert(appReleases).values({
     version: input.version,
