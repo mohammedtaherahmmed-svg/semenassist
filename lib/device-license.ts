@@ -1,5 +1,6 @@
+import Constants from "expo-constants";
 import { createTRPCClient } from "@/lib/trpc";
-import { getDeviceLicenseIdentity, signDeviceLicenseChallenge } from "@/lib/vision";
+import { getDeviceLicenseIdentity, signDeviceLicenseChallenge, verifySignedUpdateManifest } from "@/lib/vision";
 
 export async function activateDeviceLicense(serial: string) {
   const normalizedSerial = serial.trim().toUpperCase();
@@ -40,5 +41,24 @@ export async function validateDeviceLicense() {
 
 export async function checkForAppUpdate(currentVersionCode: number, channel: "stable" | "beta" = "stable") {
   const client = createTRPCClient();
-  return client.licensing.latestRelease.query({ currentVersionCode, channel });
+  const result = await client.licensing.latestRelease.query({ currentVersionCode, channel });
+  if (!result.updateAvailable) return result;
+
+  const publicKeyPem = String(Constants.expoConfig?.extra?.updateManifestPublicKey ?? "");
+  if (!publicKeyPem) throw new Error("مفتاح التحقق من التحديث غير مضبوط في إصدار التطبيق.");
+  const manifest = result.manifest;
+  const canonicalManifest = JSON.stringify({
+    version: manifest.version,
+    versionCode: manifest.versionCode,
+    channel: manifest.channel,
+    minSupportedVersionCode: manifest.minSupportedVersionCode,
+    mandatory: manifest.mandatory,
+    apkUrl: manifest.apkUrl,
+    sha256: manifest.sha256,
+    fileSizeBytes: manifest.fileSizeBytes,
+    releaseNotes: manifest.releaseNotes ?? "",
+  });
+  const valid = await verifySignedUpdateManifest(canonicalManifest, result.signature, publicKeyPem);
+  if (!valid) throw new Error("تم رفض التحديث لأن التوقيع الرقمي للبيانات غير صالح.");
+  return { ...result, signatureVerified: true as const };
 }
