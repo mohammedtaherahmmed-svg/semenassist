@@ -3,6 +3,8 @@ name: Licensing foundation CI
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [feature/device-license-update-foundation]
 
 permissions:
   contents: read
