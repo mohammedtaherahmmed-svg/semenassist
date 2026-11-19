@@ -43,6 +43,13 @@
       "when": 1795122839347,
       "tag": "0005_device_activation_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1795122853150,
+      "tag": "0006_one_device_per_license",
+      "breakpoints": true
     }
   ]
 }
