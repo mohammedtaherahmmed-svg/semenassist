@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { createCorsMiddleware } from "./cors";
 import { clearLegacySessionCookie } from "./cookies";
+import { checkDatabaseConnection } from "../db";
 import { cancelVideoAnalysisJob, createVideoAnalysisJob, getVideoAnalysisJob, hasAnalysisCapacity } from "../vision/jobs";
 import { MAX_VIDEO_BYTES, MAX_VIDEO_LABEL } from "../../shared/vision-config";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
@@ -114,6 +115,16 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
+  });
+
+  // Render readiness probe: report ready only when the external MySQL service responds.
+  app.get("/api/health/ready", async (_req, res) => {
+    const databaseReady = await checkDatabaseConnection();
+    if (!databaseReady) {
+      res.status(503).json({ ok: false, database: "unavailable" });
+      return;
+    }
+    res.json({ ok: true, database: "connected" });
   });
 
   app.use(

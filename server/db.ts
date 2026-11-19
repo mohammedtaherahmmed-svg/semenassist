@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { analysisRuns, auditLogs, benchmarkRuns, calibrationProfiles, humanReviews, InsertAuditLog, InsertUser, laboratoryMembers, sampleReports, syncQueue, users, videoAssets } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -10,6 +10,21 @@ export async function getDb() {
     try { _db = drizzle(process.env.DATABASE_URL); } catch { console.warn("[Database] Failed to connect"); _db = null; }
   }
   return _db;
+}
+
+/**
+ * Checks that the configured MySQL database is reachable.
+ * Used by hosting-provider readiness probes; it does not mutate data.
+ */
+export async function checkDatabaseConnection(): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    await db.execute(sql`SELECT 1`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {

@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: semenassist-api-staging
+    runtime: docker
+    region: frankfurt
+    autoDeploy: false
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: MANUS_PROJECT_ID
+        sync: false
+      - key: MANUS_JWT_SECRET
+        sync: false
+      - key: MANUS_OAUTH_API_URL
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
+      - key: LICENSE_SERIAL_PEPPER
+        sync: false
+      - key: UPDATE_MANIFEST_PRIVATE_KEY
+        sync: false
+      - key: BUILT_IN_FORGE_API_URL
+        sync: false
+      - key: BUILT_IN_FORGE_API_KEY
+        sync: false

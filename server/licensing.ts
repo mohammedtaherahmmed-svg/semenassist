@@ -117,6 +117,15 @@ export async function activateDevice(input: {
   );
   if (!validProof) throw new Error("إثبات ملكية الجهاز غير صالح");
 
+  const licenseRows = await db.select().from(deviceLicenses)
+    .where(eq(deviceLicenses.serialHash, serialDigest(input.serial)))
+    .limit(1);
+  const license = licenseRows[0];
+  if (!license || license.status !== "active") throw new Error("السيريال غير صالح أو موقوف");
+  if (license.expiresAt && license.expiresAt.getTime() <= Date.now()) {
+    throw new Error("انتهت صلاحية الترخيص");
+  }
+
   // Consume the challenge with a conditional update; only one request can win.
   const consumed = await db.update(deviceActivationChallenges)
     .set({ consumedAt: new Date() })
@@ -127,15 +136,6 @@ export async function activateDevice(input: {
     ));
   if (Number((consumed as unknown as { affectedRows?: number }).affectedRows ?? 0) !== 1) {
     throw new Error("طلب التفعيل مستخدم بالفعل؛ اطلب تحديًا جديدًا");
-  }
-
-  const licenseRows = await db.select().from(deviceLicenses)
-    .where(eq(deviceLicenses.serialHash, serialDigest(input.serial)))
-    .limit(1);
-  const license = licenseRows[0];
-  if (!license || license.status !== "active") throw new Error("السيريال غير صالح أو موقوف");
-  if (license.expiresAt && license.expiresAt.getTime() <= Date.now()) {
-    throw new Error("انتهت صلاحية الترخيص");
   }
 
   const keyFingerprint = createHash("sha256").update(key.export({ type: "spki", format: "der" })).digest("hex");
