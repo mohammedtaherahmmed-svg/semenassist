@@ -1,6 +1,25 @@
 export type ReviewStatus = "pending" | "reviewed";
 export type QualityLabel = "good" | "needs_attention" | "insufficient";
 
+export type QualityGate = {
+  score: number;
+  decision: "ready" | "accept_with_warning" | "reject";
+  brightness: number;
+  contrast: number;
+  sharpness: number;
+  issues: string[];
+  thresholds: Record<string, number>;
+};
+
+export type TrackingSummary = {
+  trackCount: number;
+  retentionPct: number;
+  lostTrackEstimate: number;
+  duplicateTrackEstimate: number;
+  confidence: number;
+  heatmap: number[][];
+};
+
 export type AiInterpretation = {
   summary: string;
   signals: string[];
@@ -82,6 +101,8 @@ export type SampleRecord = {
   qualityScore: number;
   qualityLabel: QualityLabel;
   qualityIssues: string[];
+  qualityGate?: QualityGate;
+  tracking?: TrackingSummary;
   warnings: string[];
   calibration: {
     micronsPerPixel: number;

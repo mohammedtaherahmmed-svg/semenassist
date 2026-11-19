@@ -32,6 +32,8 @@ export type VisionAnalysis = {
   confidence: number;
   qualityScore: number;
   qualityIssues: string[];
+  qualityGate?: import("@/lib/sample-types").QualityGate;
+  tracking?: import("@/lib/sample-types").TrackingSummary;
   thresholds: Record<string, number>;
   coefficientOfVariation: number;
   qualityMetrics: { meanBrightness: number; contrastStdDev: number; sharpnessVariance: number; decodedFrameCoveragePct: number };
