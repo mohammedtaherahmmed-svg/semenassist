@@ -1,4 +1,4 @@
-import { index, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { index, int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -172,3 +172,77 @@ export const auditLogs = mysqlTable("audit_logs", {
 }, (table) => ({ auditEntityIdx: index("audit_logs_entity_idx").on(table.entityType, table.entityId), auditCreatedIdx: index("audit_logs_created_idx").on(table.createdAt), auditActorIdx: index("audit_logs_actor_idx").on(table.actorOpenId) }));
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
+
+
+/**
+ * Product licensing is device-bound. Only a keyed hash of the human-readable
+ * serial is persisted; the raw serial is shown once at issuance time.
+ */
+export const deviceLicenses = mysqlTable("device_licenses", {
+  id: int("id").autoincrement().primaryKey(),
+  serialHash: varchar("serialHash", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["active", "suspended", "revoked"]).default("active").notNull(),
+  maxDevices: int("maxDevices").default(1).notNull(),
+  expiresAt: timestamp("expiresAt"),
+  createdBy: varchar("createdBy", { length: 64 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  serialHashUnique: uniqueIndex("device_licenses_serial_hash_uq").on(table.serialHash),
+  statusIdx: index("device_licenses_status_idx").on(table.status),
+}));
+
+export const licensedDevices = mysqlTable("licensed_devices", {
+  id: int("id").autoincrement().primaryKey(),
+  licenseId: int("licenseId").notNull(),
+  installationId: varchar("installationId", { length: 128 }).notNull(),
+  publicKey: text("publicKey").notNull(),
+  keyFingerprint: varchar("keyFingerprint", { length: 128 }).notNull(),
+  platform: mysqlEnum("platform", ["android"]).default("android").notNull(),
+  appVersion: varchar("appVersion", { length: 32 }),
+  versionCode: int("versionCode"),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  activatedAt: timestamp("activatedAt").defaultNow().notNull(),
+  lastValidatedAt: timestamp("lastValidatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  installationUnique: uniqueIndex("licensed_devices_installation_uq").on(table.installationId),
+  licenseIdx: index("licensed_devices_license_idx").on(table.licenseId),
+  fingerprintIdx: index("licensed_devices_fingerprint_idx").on(table.keyFingerprint),
+}));
+
+export const appReleases = mysqlTable("app_releases", {
+  id: int("id").autoincrement().primaryKey(),
+  version: varchar("version", { length: 32 }).notNull(),
+  versionCode: int("versionCode").notNull(),
+  channel: mysqlEnum("channel", ["stable", "beta"]).default("stable").notNull(),
+  minSupportedVersionCode: int("minSupportedVersionCode").default(1).notNull(),
+  isMandatory: int("isMandatory").default(0).notNull(),
+  apkUrl: varchar("apkUrl", { length: 1024 }).notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  fileSizeBytes: int("fileSizeBytes").notNull(),
+  manifestSignature: text("manifestSignature").notNull(),
+  releaseNotes: text("releaseNotes"),
+  isActive: int("isActive").default(0).notNull(),
+  publishedAt: timestamp("publishedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  versionCodeUnique: uniqueIndex("app_releases_version_code_uq").on(table.versionCode),
+  channelActiveIdx: index("app_releases_channel_active_idx").on(table.channel, table.isActive),
+}));
+
+export const licenseEvents = mysqlTable("license_events", {
+  id: int("id").autoincrement().primaryKey(),
+  licenseId: int("licenseId"),
+  deviceId: int("deviceId"),
+  actorOpenId: varchar("actorOpenId", { length: 64 }),
+  eventType: varchar("eventType", { length: 64 }).notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  details: text("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  licenseIdx: index("license_events_license_idx").on(table.licenseId),
+  deviceIdx: index("license_events_device_idx").on(table.deviceId),
+  createdIdx: index("license_events_created_idx").on(table.createdAt),
+}));
