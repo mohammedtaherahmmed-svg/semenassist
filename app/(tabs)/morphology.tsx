@@ -98,7 +98,7 @@ export default function MorphologyScreen() {
   async function savePrimaryObject(record: MorphologyImageRecord) {
     const annotation: MorphologyObjectAnnotation = {
       objectId: `OBJ-${record.objects.length + 1}`, headShape, tailStatus, overlap, debris,
-      masks: [...maskDrafts, ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: reviewerId.trim() }] : [])],
+      masks: [...maskDrafts.map((mask) => ({ ...mask, reviewerId: reviewerId.trim() })), ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: reviewerId.trim() }] : [])],
       annotatedAt: new Date().toISOString(), reviewerId: reviewerId.trim(),
     };
     const next = await updateMorphologyImage({ ...record, objects: [...record.objects, annotation] });
@@ -118,7 +118,7 @@ export default function MorphologyScreen() {
     }
     const secondReview = {
       reviewerId: record.secondReviewerId, headShape, tailStatus, overlap, debris,
-      masks: [...maskDrafts, ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: record.secondReviewerId }] : [])],
+      masks: [...maskDrafts.map((mask) => ({ ...mask, reviewerId: record.secondReviewerId! })), ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: record.secondReviewerId }] : [])],
       reviewedAt: new Date().toISOString(),
     };
     const objects = record.objects.map((item) => item.objectId === selectedObjectId ? { ...item, secondReview } : item);
@@ -181,6 +181,7 @@ export default function MorphologyScreen() {
     const id = secondReviewerId.trim();
     if (!id) { Alert.alert("معرّف مطلوب", "أدخل معرّف المراجع الثاني أولًا."); return; }
     if (id === selected.reviewerId) { Alert.alert("معرّف غير صالح", "يجب أن يختلف المراجع الثاني عن المراجع الأول."); return; }
+    if (id === selected.secondReviewerId) { Alert.alert("المعرّف محفوظ بالفعل", "هذا المعرّف مرتبط بالصورة المحددة بالفعل."); return; }
     if (selected.objects.some((item) => item.secondReview && item.secondReview.reviewerId !== id)) {
       Alert.alert("لا يمكن تغيير المراجع", "توجد مراجعات محفوظة بمعرّف آخر. احتفظ بالمعرّف الأصلي حتى لا تُنسب المراجعات إلى شخص مختلف."); return;
     }
@@ -195,7 +196,7 @@ export default function MorphologyScreen() {
     const id = adjudicatorId.trim();
     if (!id || id === existing.reviewerId || id === existing.secondReview.reviewerId) { Alert.alert("معرّف المحكّم غير صالح", "أدخل معرّف خبير ثالث مستقل عن المراجعين الاثنين."); return; }
     if (adjudicationNote.trim().length < 5) { Alert.alert("سبب التحكيم مطلوب", "اكتب مبررًا مختصرًا لقرار الخبير (5 أحرف على الأقل)."); return; }
-    const masks = [...maskDrafts, ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: id }] : [])];
+    const masks = [...maskDrafts.map((mask) => ({ ...mask, reviewerId: id })), ...(maskPoints.length >= 3 ? [{ region: maskRegion, points: maskPoints, createdAt: new Date().toISOString(), reviewerId: id }] : [])];
     const adjudication = { reviewerId: id, headShape, tailStatus, overlap, debris, masks, note: adjudicationNote.trim(), adjudicatedAt: new Date().toISOString() };
     const objects = record.objects.map((item) => item.objectId === selectedObjectId ? { ...item, adjudication } : item);
     const next = await updateMorphologyImage({ ...record, objects, adjudicationStatus: "unresolved" });
