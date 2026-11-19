@@ -65,7 +65,7 @@ const config = {
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"],
     intentFilters: [
       {
         action: "VIEW",
