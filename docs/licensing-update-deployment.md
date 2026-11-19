@@ -33,7 +33,7 @@ Challenge lifetime is five minutes and each challenge is single-use. The Android
 
 ## Update publishing
 
-Only HTTPS APK URLs are accepted. The service signs canonical release metadata with RSA-2048. Android must pin the corresponding public key and verify the signature and APK SHA-256 before handing the APK to Android's package installer. The client-side manifest signature verification, installer flow, package-signing certificate continuity checks, and real-device tests are still pending.
+Only HTTPS APK URLs are accepted. The service signs canonical release metadata with RSA-2048. Android must pin the corresponding public key and verify the signature and APK SHA-256 before handing the APK to Android's package installer. The Android client verifies the signed manifest, downloads the APK through Android DownloadManager, checks the downloaded file against the signed SHA-256 digest, and hands the verified package to Android's installer. The user may need to grant the Android 'Install unknown apps' permission. Package-signing certificate continuity and real-device tests are still pending.
 
 ## Canonical manifest verification
 
