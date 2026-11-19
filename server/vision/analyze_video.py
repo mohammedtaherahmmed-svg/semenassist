@@ -180,6 +180,39 @@ def representative_shapes(tracks):
     return representatives
 
 
+def frame_quality(gray):
+    """Non-diagnostic image signals used to explain whether a video is readable."""
+    return float(np.mean(gray)), float(np.std(gray)), float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def quality_gate(duration, fps, width, analyzed_frames, coverage, tracks, count_cv, brightness, contrast, sharpness):
+    issues = []
+    if duration < 12: issues.append("مدة الفيديو أقل من 12 ثانية.")
+    if fps < 10: issues.append("معدل الإطارات منخفض أو غير واضح.")
+    if width < 640: issues.append("الدقة الأفقية أقل من 640 بكسل.")
+    if analyzed_frames < 12: issues.append("عدد الإطارات القابلة للتحليل منخفض.")
+    if coverage < 75: issues.append("تغطية التحليل أقل من 75% من الفيديو.")
+    if tracks < 5: issues.append("عدد المسارات المكتشفة منخفض.")
+    if count_cv > 0.1: issues.append("تذبذب عدد الأجسام أعلى من الهدف.")
+    if brightness < 35 or brightness > 225: issues.append("الإضاءة خارج النطاق المفضل.")
+    if contrast < 18: issues.append("التباين منخفض وقد يخفي حدود الخلايا.")
+    if sharpness < 20: issues.append("حدة الصورة منخفضة أو الفيديو مهتز.")
+    score = int(max(0, min(100, 100 - min(40, len(issues) * 8) - (12 if sharpness < 20 else 0) - (8 if contrast < 18 else 0))))
+    decision = "ready" if score >= 75 and not issues else "accept_with_warning" if score >= 50 else "reject"
+    return {"score": score, "decision": decision, "brightness": round(brightness, 2), "contrast": round(contrast, 2), "sharpness": round(sharpness, 2), "issues": issues, "thresholds": {"minDurationSec": 12, "minCoveragePct": 75, "minSharpness": 20, "minContrast": 18}}
+
+
+def tracking_summary(tracks, analyzed_frames, heatmap):
+    if not tracks or not analyzed_frames:
+        return {"trackCount": 0, "retentionPct": 0, "lostTrackEstimate": 0, "duplicateTrackEstimate": 0, "confidence": 0, "heatmap": heatmap}
+    retention_values = [min(1.0, track["seen"] / analyzed_frames) for track in tracks]
+    retention = float(np.mean(retention_values))
+    short_tracks = sum(1 for track in tracks if track["seen"] < max(3, analyzed_frames * 0.2))
+    duplicate_estimate = sum(1 for left, right in zip(tracks, tracks[1:]) if math.dist(left["points"][0], right["points"][0]) < 8)
+    confidence = max(0.0, min(1.0, retention * (1.0 - min(1.0, short_tracks / max(1, len(tracks))))))
+    return {"trackCount": len(tracks), "retentionPct": round(retention * 100, 1), "lostTrackEstimate": short_tracks, "duplicateTrackEstimate": duplicate_estimate, "confidence": round(confidence, 2), "heatmap": heatmap}
+
+
 def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counting_area_mm2=0.0, dilution_factor=0.0):
     cap = cv2.VideoCapture(path)
     if not cap.isOpened():
@@ -197,6 +230,8 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
     analysis_microns_per_pixel = microns_per_pixel
     processed = 0
     analyzed_source_frames = []
+    heatmap = [[0 for _ in range(12)] for _ in range(8)]
+    quality_samples = []
     max_source_frames = min(frame_count or 600, max(1, int((fps or 30) * 20)))
     sample_every = max(1, math.ceil((frame_count or max_source_frames) / 120))
     while processed < max_source_frames:
@@ -209,9 +244,14 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
                 frame = cv2.resize(frame, (640, max(1, int(frame.shape[0] * scale))), interpolation=cv2.INTER_AREA)
                 analysis_microns_per_pixel = microns_per_pixel / scale
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            quality_samples.append(frame_quality(gray))
             components = valid_components(gray)
             next_id = match_tracks(active, components, next_id, processed, max_distance=32 * math.sqrt(sample_every), max_gap_frames=2 * sample_every)
             counts.append(len(components))
+            for component in components:
+                row = min(7, max(0, int(component["point"][1] / max(1, gray.shape[0]) * 8)))
+                column = min(11, max(0, int(component["point"][0] / max(1, gray.shape[1]) * 12)))
+                heatmap[row][column] += 1
             analyzed_source_frames.append(processed)
         processed += 1
     cap.release()
@@ -285,10 +325,19 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
         "shapeProxyNormalPercent": round(morphology_totals["normalForms"] / morphology_total * 100, 2) if morphology_total else 0,
         "automaticLimitations": ["التصنيف الحالي heuristic من شكل الكونتور ولا يساوي نموذجًا مدربًا أو اعتماد Kruger.", "الأكروسوم والقطعة الوسطى والذيل تُقدّر من هندسة الجسم المتصل وقد تتأثر بالإضاءة والتداخل.", "يجب اعتماد العدد النهائي بعد مراجعة صورة صبغة/تكبير مناسب بواسطة فني أو مشرف."],
     }
+    mean_brightness = float(np.mean([item[0] for item in quality_samples])) if quality_samples else 0.0
+    mean_contrast = float(np.mean([item[1] for item in quality_samples])) if quality_samples else 0.0
+    mean_sharpness = float(np.mean([item[2] for item in quality_samples])) if quality_samples else 0.0
+    coverage_pct = min(100.0, (analyzed_duration / duration) * 100) if duration else 0
+    quality_gate_result = quality_gate(duration, fps, width, analyzed_frames, coverage_pct, len(tracks), count_cv, mean_brightness, mean_contrast, mean_sharpness)
+    tracking = tracking_summary(tracks, analyzed_frames, heatmap)
+    quality = min(quality, quality_gate_result["score"])
+    issues.extend(quality_gate_result["issues"])
+    issues = list(dict.fromkeys(issues))
     result = {
         "ok": True,
         "engine": "opencv-centroid-tracker",
-        "engineVersion": "0.6.0-kalman-hungarian",
+        "engineVersion": "0.7.0-kalman-quality-gate-heatmap",
         "framesAnalyzed": analyzed_frames,
         "frameCount": frame_count,
         "fps": round(fps, 2),
@@ -296,7 +345,7 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
         "height": height,
         "durationSec": round(duration, 2),
         "analyzedDurationSec": round(analyzed_duration, 2),
-        "coveragePct": round(min(100.0, (analyzed_duration / duration) * 100) if duration else 0, 1),
+        "coveragePct": round(coverage_pct, 1),
         "objectsDetected": len(tracks),
         "averageObjectsPerFrame": round(avg_count, 2),
         "concentration": round(concentration, 4),
@@ -312,6 +361,8 @@ def analyze(path, microns_per_pixel, chamber_depth, include_tracks=False, counti
         "confidenceInterpretation": "quality-score proxy; not a statistical or clinical probability",
         "qualityScore": int(quality),
         "qualityIssues": issues,
+        "qualityGate": quality_gate_result,
+        "tracking": tracking,
         "coefficientOfVariation": round(count_cv, 3),
         "kinematics": {"vcl": average_metric("vcl"), "vsl": average_metric("vsl"), "vap": average_metric("vap"), "lin": average_metric("lin"), "str": average_metric("str"), "wob": average_metric("wob"), "alh": average_metric("alh"), "bcf": None},
         "morphology": morphology,

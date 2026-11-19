@@ -4,7 +4,7 @@
 
 export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 export const MAX_VIDEO_LABEL = "50 ميجابايت";
-export const VISION_ENGINE_VERSION = "android-local-cv-screening-0.3.0";
+export const VISION_ENGINE_VERSION = "opencv-kalman-quality-gate-0.7.0";
 export const POLL_MIN_MS = 700;
 export const POLL_MAX_MS = 2000;
 export const JOB_TTL_MS = 30 * 60 * 1000;

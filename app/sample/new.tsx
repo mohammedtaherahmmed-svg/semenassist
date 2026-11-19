@@ -123,6 +123,8 @@ export default function NewSampleScreen() {
       sampleRateHz: visionResult.sampleRateHz,
       coefficientOfVariation: visionResult.coefficientOfVariation,
       qualityMetrics: visionResult.qualityMetrics,
+      qualityGate: visionResult.qualityGate,
+      tracking: visionResult.tracking,
       kinematics: visionResult.kinematics,
       morphology: visionResult.morphology,
       calibration: {

@@ -25,6 +25,8 @@ export type VisionAnalysis = {
   confidence: number;
   qualityScore: number;
   qualityIssues: string[];
+  qualityGate?: { score: number; decision: "ready" | "accept_with_warning" | "reject"; brightness: number; contrast: number; sharpness: number; issues: string[]; thresholds: Record<string, number> };
+  tracking?: { trackCount: number; retentionPct: number; lostTrackEstimate: number; duplicateTrackEstimate: number; confidence: number; heatmap: number[][] };
   confidenceInterpretation?: string;
   coefficientOfVariation?: number;
   kinematics?: { vcl: number; vsl: number; vap: number; lin: number; str: number; wob: number; alh: number; bcf: number | null };

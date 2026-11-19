@@ -352,10 +352,21 @@ class SemenAssistVisionModule : Module() {
     if (countCv > 0.1) issues.add("تباين عدد الأجسام بين الإطارات أعلى من 10%.")
     val quality = max(0, min(100, 100 - issues.size * 12 + min(12, validTracks.size / 5)))
     val avg = { key: String -> if (metrics.isEmpty()) 0.0 else metrics.map { it[key] ?: 0.0 }.average() }
+    val qualityDecision = if (quality >= 75 && issues.isEmpty()) "ready" else if (quality >= 50) "accept_with_warning" else "reject"
+    val heatmap = Array(8) { IntArray(12) }
+    val scaledWidth = max(1.0, sourceWidth * sourceScale)
+    val scaledHeight = max(1.0, sourceHeight * sourceScale)
+    tracks.flatMap { it.points }.forEach { point ->
+      val row = min(7, max(0, (point.y / scaledHeight * 8).toInt()))
+      val column = min(11, max(0, (point.x / scaledWidth * 12).toInt()))
+      heatmap[row][column] += 1
+    }
+    val retentionPct = if (validTracks.isEmpty()) 0.0 else validTracks.map { min(1.0, it.points.size.toDouble() / sampleCount) }.average() * 100.0
+    val shortTracks = validTracks.count { it.points.size < max(3, (sampleCount * 0.2).toInt()) }
 
     return mapOf(
       "ok" to true, "engine" to "android-local-cv-screening",
-      "engineVersion" to "0.5.0-casa-validation-export",
+      "engineVersion" to "0.6.0-quality-gate-heatmap",
       "framesAnalyzed" to decodedSlots.size, "frameCount" to sourceFrameCount,
       "fps" to fps, "fpsSource" to fpsSource, "sampleRateHz" to sampleRate,
       "width" to sourceWidth, "height" to sourceHeight,
@@ -369,6 +380,11 @@ class SemenAssistVisionModule : Module() {
       "nonProgressiveMotility" to nonProgressive, "immotile" to immotile,
       "confidence" to (quality / 100.0), "qualityScore" to quality,
       "qualityIssues" to issues,
+      "qualityGate" to mapOf(
+        "score" to quality, "decision" to qualityDecision, "brightness" to meanBrightness,
+        "contrast" to contrastStdDev, "sharpness" to sharpnessVariance, "issues" to issues,
+        "thresholds" to mapOf("minDurationSec" to 12.0, "minCoveragePct" to 90.0, "minSharpness" to 12.0, "minContrast" to 18.0)
+      ),
       "qualityMetrics" to mapOf(
         "meanBrightness" to meanBrightness,
         "contrastStdDev" to contrastStdDev,
@@ -403,6 +419,11 @@ class SemenAssistVisionModule : Module() {
         "identitySwitches" to null,
         "fragmentation" to null,
         "note" to "Identity switches and fragmentation require annotated ground truth."
+      ),
+      "tracking" to mapOf(
+        "trackCount" to validTracks.size, "retentionPct" to retentionPct,
+        "lostTrackEstimate" to shortTracks, "duplicateTrackEstimate" to 0,
+        "confidence" to (retentionPct / 100.0), "heatmap" to heatmap.map { it.toList() }
       ),
       "morphology" to mapOf("method" to "not-assessed-on-device", "totalExamined" to 0,
         "normalForms" to 0, "roundHeads" to 0, "elongatedHeads" to 0, "irregularHeads" to 0,
