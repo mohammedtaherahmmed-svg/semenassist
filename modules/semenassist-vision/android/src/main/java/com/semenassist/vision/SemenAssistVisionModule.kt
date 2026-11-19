@@ -122,8 +122,8 @@ class SemenAssistVisionModule : Module() {
         preferences.edit().putString("installation_id", it).apply()
       }
       val publicKeyPem = getOrCreateLicenseKeyPair().public.encoded.let { encoded ->
-        val body = Base64.encodeToString(encoded, Base64.NO_WRAP).chunked(64).joinToString("\\n")
-        "-----BEGIN PUBLIC KEY-----\\n$body\\n-----END PUBLIC KEY-----"
+        val body = Base64.encodeToString(encoded, Base64.NO_WRAP).chunked(64).joinToString("\n")
+        "-----BEGIN PUBLIC KEY-----\n$body\n-----END PUBLIC KEY-----"
       }
       mapOf("installationId" to installationId, "publicKeyPem" to publicKeyPem, "keyAlgorithm" to "RSA-2048")
     }
