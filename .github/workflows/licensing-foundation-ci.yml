@@ -4,11 +4,14 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - feature/device-license-update-foundation
+    branches: [feature/device-license-update-foundation]
 
 permissions:
   contents: read
+
+concurrency:
+  group: licensing-foundation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -36,3 +39,54 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+      - name: Validate Drizzle snapshots
+        run: |
+          before=$(find drizzle -maxdepth 1 -type f -name '*.sql' | sort | tr '\n' ' ')
+          DATABASE_URL='mysql://ci:ci@127.0.0.1:3306/semenassist' pnpm exec drizzle-kit generate --name snapshot-check
+          after=$(find drizzle -maxdepth 1 -type f -name '*.sql' | sort | tr '\n' ' ')
+          if [ "$before" != "$after" ]; then
+            echo "Drizzle schema snapshots do not match schema.ts"
+            exit 1
+          fi
+
+  android-native-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Android project
+        run: pnpm exec expo prebuild --platform android --no-install --non-interactive
+
+      - name: Compile Android debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload Android debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: semenassist-android-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

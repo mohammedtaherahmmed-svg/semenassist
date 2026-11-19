@@ -1,17 +1,24 @@
 package com.semenassist.vision
 
+import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.KeyFactory
+import java.security.spec.X509EncodedKeySpec
 import java.security.Signature
+import java.security.MessageDigest
 import java.util.UUID
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -134,6 +141,101 @@ class SemenAssistVisionModule : Module() {
       signer.initSign(getOrCreateLicenseKeyPair().private)
       signer.update(nonce)
       Base64.encodeToString(signer.sign(), Base64.NO_WRAP)
+    }
+
+    AsyncFunction("verifyUpdateManifest") { manifestJson: String, signatureBase64: String, publicKeyPem: String ->
+      val encodedKey = publicKeyPem
+        .replace("-----BEGIN PUBLIC KEY-----", "")
+        .replace("-----END PUBLIC KEY-----", "")
+        .replace("\\n", "")
+        .trim()
+      val publicKey = KeyFactory.getInstance("RSA").generatePublic(
+        X509EncodedKeySpec(Base64.decode(encodedKey, Base64.DEFAULT))
+      )
+      val verifier = Signature.getInstance("SHA256withRSA")
+      verifier.initVerify(publicKey)
+      verifier.update(manifestJson.toByteArray(Charsets.UTF_8))
+      verifier.verify(Base64.decode(signatureBase64, Base64.DEFAULT))
+    }
+
+    AsyncFunction("downloadUpdateApk") { apkUrl: String, expectedSha256: String ->
+      require(apkUrl.startsWith("https://", ignoreCase = true)) { "يجب أن يكون رابط التحديث آمنًا HTTPS." }
+      require(expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) { "بصمة SHA-256 غير صالحة." }
+      val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
+      val request = DownloadManager.Request(Uri.parse(apkUrl))
+        .setTitle("SemenAssist update")
+        .setDescription("Downloading verified application update")
+        .setMimeType("application/vnd.android.package-archive")
+        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        .setAllowedOverMetered(true)
+        .setAllowedOverRoaming(false)
+        .setDestinationInExternalFilesDir(
+          context,
+          Environment.DIRECTORY_DOWNLOADS,
+          "semenassist-update-${System.currentTimeMillis()}.apk"
+        )
+      val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      mapOf("downloadId" to manager.enqueue(request))
+    }
+
+    AsyncFunction("getUpdateDownloadStatus") { downloadId: Long ->
+      val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
+      val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
+      cursor.use {
+        if (!it.moveToFirst()) error("عملية تنزيل التحديث غير موجودة.")
+        val status = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+        val downloaded = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+        val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+        val state = when (status) {
+          DownloadManager.STATUS_PENDING -> "pending"
+          DownloadManager.STATUS_RUNNING -> "downloading"
+          DownloadManager.STATUS_PAUSED -> "paused"
+          DownloadManager.STATUS_SUCCESSFUL -> "downloaded"
+          DownloadManager.STATUS_FAILED -> "failed"
+          else -> "unknown"
+        }
+        mapOf("state" to state, "bytesDownloaded" to downloaded, "totalBytes" to total)
+      }
+    }
+
+    AsyncFunction("installVerifiedApk") { downloadId: Long, expectedSha256: String ->
+      require(expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) { "بصمة SHA-256 غير صالحة." }
+      val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
+      val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+      val cursor = manager.query(DownloadManager.Query().setFilterById(downloadId))
+      val completed = cursor.use {
+        it.moveToFirst() && it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) == DownloadManager.STATUS_SUCCESSFUL
+      }
+      require(completed) { "لم يكتمل تنزيل ملف التحديث." }
+      val apkUri = manager.getUriForDownloadedFile(downloadId) ?: error("تعذر الوصول إلى ملف APK بعد التنزيل.")
+      val digest = MessageDigest.getInstance("SHA-256")
+      context.contentResolver.openInputStream(apkUri)?.use { input ->
+        val buffer = ByteArray(8192)
+        while (true) {
+          val count = input.read(buffer)
+          if (count < 0) break
+          digest.update(buffer, 0, count)
+        }
+      } ?: error("تعذر قراءة ملف التحديث.")
+      val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+      if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
+        manager.remove(downloadId)
+        error("فشل التحقق من سلامة ملف APK؛ تم رفض التثبيت.")
+      }
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+        val permissionIntent = Intent(
+          Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+          Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(permissionIntent)
+        return@AsyncFunction mapOf("needsInstallPermission" to true)
+      }
+      val installIntent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(apkUri, "application/vnd.android.package-archive")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(installIntent)
+      mapOf("installerLaunched" to true, "sha256Verified" to true)
     }
 
     AsyncFunction("analyzeVideo") { videoUri: String, micronsPerPixel: Double, chamberDepth: Double, countingAreaMm2: Double, dilutionFactor: Double ->

@@ -38,6 +38,7 @@ const publicRuntime = {
     "",
   appId: process.env.MANUS_PROJECT_ID ?? process.env.VITE_APP_ID ?? process.env.EXPO_PUBLIC_APP_ID ?? "",
   apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://semenassist-bvur8ptx.manus.space",
+  updateManifestPublicKey: process.env.EXPO_PUBLIC_UPDATE_MANIFEST_PUBLIC_KEY ?? "",
 };
 
 const config = {
@@ -64,7 +65,7 @@ const config = {
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: ["POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"],
     intentFilters: [
       {
         action: "VIEW",

@@ -7,7 +7,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import {
   appReleases,
   deviceActivationChallenges,
@@ -66,6 +66,11 @@ export async function issueDeviceLicense(input: {
 export async function createActivationChallenge(installationId: string) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  // Keep the challenge table bounded; retain a short audit/debug window.
+  await db.delete(deviceActivationChallenges).where(lt(
+    deviceActivationChallenges.expiresAt,
+    new Date(Date.now() - 60 * 60 * 1000),
+  ));
   const challengeId = randomBytes(24).toString("hex");
   const nonce = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
@@ -228,6 +233,22 @@ export async function revokeDeviceLicense(licenseId: number) {
   return { success: true };
 }
 
+export async function releaseDeviceBinding(licenseId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  const rows = await db.select().from(licensedDevices).where(eq(licensedDevices.licenseId, licenseId)).limit(1);
+  const device = rows[0];
+  if (!device) return { success: true, released: false };
+  await db.insert(licenseEvents).values({
+    licenseId,
+    deviceId: device.id,
+    eventType: "device.binding.released",
+    details: JSON.stringify({ keyFingerprint: device.keyFingerprint }),
+  });
+  await db.delete(licensedDevices).where(eq(licensedDevices.id, device.id));
+  return { success: true, released: true };
+}
+
 export async function listDeviceLicenses() {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
@@ -292,7 +313,11 @@ export async function publishAppRelease(input: {
   const manifest = { ...input, mandatory: input.mandatory };
   const privateKeyPem = process.env.UPDATE_MANIFEST_PRIVATE_KEY;
   if (!privateKeyPem) throw new Error("UPDATE_MANIFEST_PRIVATE_KEY غير مضبوط على الخادم");
-  const signature = sign("sha256", Buffer.from(canonicalManifest(manifest)), createPrivateKey(normalizePem(privateKeyPem))).toString("base64");
+  const signingKey = createPrivateKey(normalizePem(privateKeyPem));
+  if (signingKey.asymmetricKeyType !== "rsa" || Number(signingKey.asymmetricKeyDetails?.modulusLength ?? 0) < 2048) {
+    throw new Error("مفتاح توقيع التحديث يجب أن يكون RSA بطول 2048 بت على الأقل");
+  }
+  const signature = sign("sha256", Buffer.from(canonicalManifest(manifest)), signingKey).toString("base64");
   await db.update(appReleases).set({ isActive: 0 }).where(eq(appReleases.channel, input.channel));
   await db.insert(appReleases).values({
     version: input.version,

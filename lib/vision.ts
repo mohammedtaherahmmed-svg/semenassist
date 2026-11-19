@@ -40,9 +40,35 @@ export type VisionAnalysis = {
   processingLocation?: "on-device";
 };
 
+export type LicenseIdentity = { installationId: string; publicKeyPem: string; keyAlgorithm: "RSA-2048" };
+
 type NativeVisionModule = {
   analyzeVideo(uri: string, micronsPerPixel: number, chamberDepth: number, countingAreaMm2: number, dilutionFactor: number): Promise<VisionAnalysis>;
+  getLicenseIdentity(): Promise<LicenseIdentity>;
+  signLicenseChallenge(nonceBase64Url: string): Promise<string>;
+  verifyUpdateManifest(manifestJson: string, signatureBase64: string, publicKeyPem: string): Promise<boolean>;
+  downloadUpdateApk(apkUrl: string, expectedSha256: string): Promise<{ downloadId: number }>;
+  getUpdateDownloadStatus(downloadId: number): Promise<{ state: string; bytesDownloaded: number; totalBytes: number }>;
+  installVerifiedApk(downloadId: number, expectedSha256: string): Promise<{ needsInstallPermission?: boolean; installerLaunched?: boolean; sha256Verified?: boolean }>;
 };
+
+export async function getDeviceLicenseIdentity(): Promise<LicenseIdentity> {
+  return getNativeVision().getLicenseIdentity();
+}
+
+export async function signDeviceLicenseChallenge(nonceBase64Url: string): Promise<string> {
+  if (!nonceBase64Url || !/^[A-Za-z0-9_-]+$/.test(nonceBase64Url)) {
+    throw new Error("تحدي الترخيص غير صالح.");
+  }
+  return getNativeVision().signLicenseChallenge(nonceBase64Url);
+}
+
+export async function verifySignedUpdateManifest(manifestJson: string, signature: string, publicKeyPem: string): Promise<boolean> {
+  if (!manifestJson || !signature || !publicKeyPem.includes("BEGIN PUBLIC KEY")) {
+    throw new Error("بيانات التحقق من التحديث غير مكتملة.");
+  }
+  return getNativeVision().verifyUpdateManifest(manifestJson, signature, publicKeyPem);
+}
 
 export type AnalysisProgress = {
   status: "queued" | "processing" | "completed" | "failed" | "cancelled";
@@ -98,4 +124,16 @@ export function validateLocalVideoSize(sizeBytes: number) {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) throw new Error("حجم ملف الفيديو غير صالح.");
   if (sizeBytes > MAX_VIDEO_BYTES) throw new Error(`حجم الفيديو أكبر من الحد المسموح ${MAX_VIDEO_LABEL}.`);
   return true;
+}
+
+export async function startNativeUpdateDownload(apkUrl: string, sha256: string) {
+  return getNativeVision().downloadUpdateApk(apkUrl, sha256);
+}
+
+export async function getNativeUpdateDownloadStatus(downloadId: number) {
+  return getNativeVision().getUpdateDownloadStatus(downloadId);
+}
+
+export async function installNativeVerifiedApk(downloadId: number, sha256: string) {
+  return getNativeVision().installVerifiedApk(downloadId, sha256);
 }
