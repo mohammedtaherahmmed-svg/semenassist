@@ -224,6 +224,27 @@ export async function validateLicensedDevice(input: {
   return { valid: true, licenseId: license.id, expiresAt: license.expiresAt ?? null };
 }
 
+
+export async function setDeviceLicenseStatus(licenseId: number, status: "active" | "suspended") {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  const rows = await db.select().from(deviceLicenses).where(eq(deviceLicenses.id, licenseId)).limit(1);
+  const license = rows[0];
+  if (!license) throw new Error("الترخيص غير موجود");
+  if (license.status === "revoked") {
+    throw new Error("لا يمكن إعادة تفعيل ترخيص ملغي نهائيًا؛ أصدر ترخيصًا جديدًا");
+  }
+  if (license.status === status) {
+    return { success: true, status, changed: false };
+  }
+  await db.update(deviceLicenses).set({ status }).where(eq(deviceLicenses.id, licenseId));
+  await db.insert(licenseEvents).values({
+    licenseId,
+    eventType: status === "suspended" ? "license.suspended" : "license.reactivated",
+  });
+  return { success: true, status, changed: true };
+}
+
 export async function revokeDeviceLicense(licenseId: number) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
