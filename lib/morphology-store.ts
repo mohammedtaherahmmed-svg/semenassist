@@ -20,6 +20,7 @@ export type MorphologyObjectAnnotation = {
   annotatedAt: string;
   reviewerId: string;
   secondReview?: { reviewerId: string; headShape: HeadShape; tailStatus: TailStatus; overlap: boolean; debris: boolean; masks: ExpertMask[]; reviewedAt: string };
+  adjudication?: { reviewerId: string; headShape: HeadShape; tailStatus: TailStatus; overlap: boolean; debris: boolean; masks: ExpertMask[]; note: string; adjudicatedAt: string };
 };
 
 export type MorphologyImageRecord = {
@@ -159,6 +160,13 @@ export async function exportMorphologyDataset(records: MorphologyImageRecord[]) 
           reviewed_at: object.secondReview.reviewedAt,
           labels: { head_shape: object.secondReview.headShape, tail_status: object.secondReview.tailStatus, overlap: object.secondReview.overlap, debris: object.secondReview.debris },
           masks: object.secondReview.masks.map((mask) => ({ region: mask.region, points_normalized: mask.points, reviewer_id: mask.reviewerId, created_at: mask.createdAt })),
+        } : null,
+        adjudication: object.adjudication ? {
+          reviewer_id: object.adjudication.reviewerId,
+          adjudicated_at: object.adjudication.adjudicatedAt,
+          note: object.adjudication.note,
+          labels: { head_shape: object.adjudication.headShape, tail_status: object.adjudication.tailStatus, overlap: object.adjudication.overlap, debris: object.adjudication.debris },
+          masks: object.adjudication.masks.map((mask) => ({ region: mask.region, points_normalized: mask.points, reviewer_id: mask.reviewerId, created_at: mask.createdAt })),
         } : null,
         annotated_at: object.annotatedAt,
         reviewer_id: object.reviewerId,
