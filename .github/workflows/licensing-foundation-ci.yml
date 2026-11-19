@@ -40,6 +40,16 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Validate Drizzle snapshots
+        run: |
+          before=$(find drizzle -maxdepth 1 -type f -name '*.sql' | sort | tr '\\n' ' ')
+          DATABASE_URL='mysql://ci:ci@127.0.0.1:3306/semenassist' pnpm exec drizzle-kit generate --name snapshot-check
+          after=$(find drizzle -maxdepth 1 -type f -name '*.sql' | sort | tr '\\n' ' ')
+          if [ "$before" != "$after" ]; then
+            echo "Drizzle schema snapshots do not match schema.ts"
+            exit 1
+          fi
+
   android-native-build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
