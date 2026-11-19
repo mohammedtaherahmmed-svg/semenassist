@@ -11,6 +11,8 @@ import android.util.Base64
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.KeyFactory
+import java.security.spec.X509EncodedKeySpec
 import java.security.Signature
 import java.util.UUID
 import expo.modules.kotlin.modules.Module
@@ -134,6 +136,21 @@ class SemenAssistVisionModule : Module() {
       signer.initSign(getOrCreateLicenseKeyPair().private)
       signer.update(nonce)
       Base64.encodeToString(signer.sign(), Base64.NO_WRAP)
+    }
+
+    AsyncFunction("verifyUpdateManifest") { manifestJson: String, signatureBase64: String, publicKeyPem: String ->
+      val encodedKey = publicKeyPem
+        .replace("-----BEGIN PUBLIC KEY-----", "")
+        .replace("-----END PUBLIC KEY-----", "")
+        .replace("\\n", "")
+        .trim()
+      val publicKey = KeyFactory.getInstance("RSA").generatePublic(
+        X509EncodedKeySpec(Base64.decode(encodedKey, Base64.DEFAULT))
+      )
+      val verifier = Signature.getInstance("SHA256withRSA")
+      verifier.initVerify(publicKey)
+      verifier.update(manifestJson.toByteArray(Charsets.UTF_8))
+      verifier.verify(Base64.decode(signatureBase64, Base64.DEFAULT))
     }
 
     AsyncFunction("analyzeVideo") { videoUri: String, micronsPerPixel: Double, chamberDepth: Double, countingAreaMm2: Double, dilutionFactor: Double ->
