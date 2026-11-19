@@ -6,7 +6,7 @@ import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, router, supervisorProcedure, publicProcedure } from "./_core/trpc";
 import { appendAuditLog, createCalibrationProfile, getLaboratoryMembership, getSampleReport, listAuditLogs, listCalibrationProfiles, listSampleReports, listUserLaboratoryIds, recordAnalysisRun, recordHumanReview, saveBenchmarkRun, saveSampleReport, setUserRole } from "./db";
-import { activateDevice, createActivationChallenge, getLatestAppRelease, issueDeviceLicense, listDeviceLicenses, publishAppRelease, revokeDeviceLicense, validateLicensedDevice } from "./licensing";
+import { activateDevice, createActivationChallenge, getLatestAppRelease, issueDeviceLicense, listDeviceLicenses, publishAppRelease, releaseDeviceBinding, revokeDeviceLicense, validateLicensedDevice } from "./licensing";
 
 const reportInput = z.object({
   sampleId: z.string().min(1),
@@ -100,6 +100,13 @@ export const appRouter = router({
       })).mutation(async ({ input, ctx }) => {
         const result = await revokeDeviceLicense(input.licenseId);
         await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.revoke", entityType: "device_license", entityId: String(input.licenseId) });
+        return result;
+      }),
+      releaseDevice: adminProcedure.input(z.object({
+        licenseId: z.number().int().positive(),
+      })).mutation(async ({ input, ctx }) => {
+        const result = await releaseDeviceBinding(input.licenseId);
+        await appendAuditLog({ actorOpenId: ctx.user.openId, actorRole: ctx.user.role, action: "license.device_transfer", entityType: "device_license", entityId: String(input.licenseId) });
         return result;
       }),
       publishRelease: adminProcedure.input(z.object({
