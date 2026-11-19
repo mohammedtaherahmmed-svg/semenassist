@@ -173,7 +173,7 @@ export default function MorphologyScreen() {
   const visibleRecords = sampleId.trim() ? records.filter((record) => record.pseudonymousSampleId === sampleId.trim()) : records;
   const selected = visibleRecords.find((record) => record.id === selectedId) ?? null;
   const annotatedObjects = visibleRecords.reduce((sum, record) => sum + record.objects.length, 0);
-  const selectedMissingReviews = selected?.objects.filter((item) => !item.secondReview).length ?? 0;
+  const selectedMissingReviews = selected?.objects.filter((item) => !item.secondReview || item.secondReview.reviewerId === item.reviewerId).length ?? 0;
   const selectedDisagreements = selected?.objects.filter((item) => item.secondReview && (item.headShape !== item.secondReview.headShape || item.tailStatus !== item.secondReview.tailStatus || item.overlap !== item.secondReview.overlap || item.debris !== item.secondReview.debris)).length ?? 0;
 
   async function saveReviewerAssignment() {
@@ -322,13 +322,13 @@ export default function MorphologyScreen() {
               </View>
               {selected.objects.map((item) => {
                 const differs = Boolean(item.secondReview && (item.headShape !== item.secondReview.headShape || item.tailStatus !== item.secondReview.tailStatus || item.overlap !== item.secondReview.overlap || item.debris !== item.secondReview.debris));
-                const status = !item.secondReview ? "بانتظار المراجع الثاني" : differs && !item.adjudication ? "اختلاف يحتاج تحكيمًا" : differs ? "حُسم بواسطة خبير ثالث" : "مراجعتان متطابقتان";
+                const status = !item.secondReview || item.secondReview.reviewerId === item.reviewerId ? "بانتظار مراجعة مستقلة" : differs && !item.adjudication ? "اختلاف يحتاج تحكيمًا" : differs ? "حُسم بواسطة خبير ثالث" : "مراجعتان متطابقتان";
                 return <View key={item.objectId} style={styles.annotationRow}>
                   <Pressable onPress={() => { setSelectedObjectId(item.objectId); resetLabelForm(); }}><Text style={styles.annotationText}>{item.objectId} · {status} · أقنعة أولى: {item.masks.length} · أقنعة ثانية: {item.secondReview?.masks.length ?? 0}{item.adjudication ? ` · المحكّم: ${item.adjudication.reviewerId}` : ""}</Text></Pressable>
                 </View>;
               })}
               <PrimaryButton label="مراجعة الاختلافات وطلب الاعتماد البشري" icon="verified" onPress={() => adjudicate(selected)} />
-              <Text style={styles.helper}>يتم اعتبار المجموعة متفقًا عليها فقط إذا تمت مراجعة كل جسم مرتين وتطابقت الوسوم الأساسية. الاختلافات لا تُحسم آليًا.</Text>
+              <Text style={styles.helper}>لا يعتمد النظام المجموعة إلا بعد مراجعة كل جسم مرتين، وتوثيق تحكيم خبير ثالث لأي اختلاف. لا تُحسم الاختلافات آليًا.</Text>
             </View>
           </>
         ) : null}
