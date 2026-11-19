@@ -43,6 +43,9 @@ export async function checkForAppUpdate(currentVersionCode: number, channel: "st
   const client = createTRPCClient();
   const result = await client.licensing.latestRelease.query({ currentVersionCode, channel });
   if (!result.updateAvailable) return result;
+  if (!result.manifest || !result.signature) {
+    throw new Error("بيانات التحديث غير مكتملة؛ تم رفض التحديث.");
+  }
 
   const publicKeyPem = String(Constants.expoConfig?.extra?.updateManifestPublicKey ?? "");
   if (!publicKeyPem) throw new Error("مفتاح التحقق من التحديث غير مضبوط في إصدار التطبيق.");
