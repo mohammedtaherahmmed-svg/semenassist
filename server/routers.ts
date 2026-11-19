@@ -6,7 +6,7 @@ import { invokeLLM } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, router, supervisorProcedure, publicProcedure } from "./_core/trpc";
 import { appendAuditLog, createCalibrationProfile, getLaboratoryMembership, getSampleReport, listAuditLogs, listCalibrationProfiles, listSampleReports, listUserLaboratoryIds, recordAnalysisRun, recordHumanReview, saveBenchmarkRun, saveSampleReport, setUserRole } from "./db";
-import { activateDevice, createActivationChallenge, getLatestAppRelease, issueDeviceLicense, listDeviceLicenses, publishAppRelease, releaseDeviceBinding, revokeDeviceLicense, validateLicensedDevice } from "./licensing";
+import { activateDevice, createActivationChallenge, getLatestAppRelease, issueDeviceLicense, listDeviceLicenses, publishAppRelease, releaseDeviceBinding, revokeDeviceLicense, setDeviceLicenseStatus, validateLicensedDevice } from "./licensing";
 
 const reportInput = z.object({
   sampleId: z.string().min(1),
@@ -95,6 +95,20 @@ export const appRouter = router({
         return result;
       }),
       list: adminProcedure.query(() => listDeviceLicenses()),
+      setStatus: adminProcedure.input(z.object({
+        licenseId: z.number().int().positive(),
+        status: z.enum(["active", "suspended"]),
+      })).mutation(async ({ input, ctx }) => {
+        const result = await setDeviceLicenseStatus(input.licenseId, input.status);
+        await appendAuditLog({
+          actorOpenId: ctx.user.openId,
+          actorRole: ctx.user.role,
+          action: input.status === "suspended" ? "license.suspend" : "license.reactivate",
+          entityType: "device_license",
+          entityId: String(input.licenseId),
+        });
+        return result;
+      }),
       revoke: adminProcedure.input(z.object({
         licenseId: z.number().int().positive(),
       })).mutation(async ({ input, ctx }) => {
