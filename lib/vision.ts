@@ -40,9 +40,24 @@ export type VisionAnalysis = {
   processingLocation?: "on-device";
 };
 
+export type LicenseIdentity = { installationId: string; publicKeyPem: string; keyAlgorithm: "RSA-2048" };
+
 type NativeVisionModule = {
   analyzeVideo(uri: string, micronsPerPixel: number, chamberDepth: number, countingAreaMm2: number, dilutionFactor: number): Promise<VisionAnalysis>;
+  getLicenseIdentity(): Promise<LicenseIdentity>;
+  signLicenseChallenge(nonceBase64Url: string): Promise<string>;
 };
+
+export async function getDeviceLicenseIdentity(): Promise<LicenseIdentity> {
+  return getNativeVision().getLicenseIdentity();
+}
+
+export async function signDeviceLicenseChallenge(nonceBase64Url: string): Promise<string> {
+  if (!nonceBase64Url || !/^[A-Za-z0-9_-]+$/.test(nonceBase64Url)) {
+    throw new Error("تحدي الترخيص غير صالح.");
+  }
+  return getNativeVision().signLicenseChallenge(nonceBase64Url);
+}
 
 export type AnalysisProgress = {
   status: "queued" | "processing" | "completed" | "failed" | "cancelled";
