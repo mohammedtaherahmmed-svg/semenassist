@@ -228,6 +228,22 @@ export async function revokeDeviceLicense(licenseId: number) {
   return { success: true };
 }
 
+export async function releaseDeviceBinding(licenseId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  const rows = await db.select().from(licensedDevices).where(eq(licensedDevices.licenseId, licenseId)).limit(1);
+  const device = rows[0];
+  if (!device) return { success: true, released: false };
+  await db.insert(licenseEvents).values({
+    licenseId,
+    deviceId: device.id,
+    eventType: "device.binding.released",
+    details: JSON.stringify({ keyFingerprint: device.keyFingerprint }),
+  });
+  await db.delete(licensedDevices).where(eq(licensedDevices.id, device.id));
+  return { success: true, released: true };
+}
+
 export async function listDeviceLicenses() {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
