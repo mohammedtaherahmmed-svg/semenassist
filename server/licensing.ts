@@ -7,7 +7,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import {
   appReleases,
   deviceActivationChallenges,
@@ -66,6 +66,11 @@ export async function issueDeviceLicense(input: {
 export async function createActivationChallenge(installationId: string) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  // Keep the challenge table bounded; retain a short audit/debug window.
+  await db.delete(deviceActivationChallenges).where(lt(
+    deviceActivationChallenges.expiresAt,
+    new Date(Date.now() - 60 * 60 * 1000),
+  ));
   const challengeId = randomBytes(24).toString("hex");
   const nonce = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
@@ -226,6 +231,22 @@ export async function revokeDeviceLicense(licenseId: number) {
   await db.update(licensedDevices).set({ status: "revoked" }).where(eq(licensedDevices.licenseId, licenseId));
   await db.insert(licenseEvents).values({ licenseId, eventType: "license.revoked" });
   return { success: true };
+}
+
+export async function releaseDeviceBinding(licenseId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  const rows = await db.select().from(licensedDevices).where(eq(licensedDevices.licenseId, licenseId)).limit(1);
+  const device = rows[0];
+  if (!device) return { success: true, released: false };
+  await db.insert(licenseEvents).values({
+    licenseId,
+    deviceId: device.id,
+    eventType: "device.binding.released",
+    details: JSON.stringify({ keyFingerprint: device.keyFingerprint }),
+  });
+  await db.delete(licensedDevices).where(eq(licensedDevices.id, device.id));
+  return { success: true, released: true };
 }
 
 export async function listDeviceLicenses() {
