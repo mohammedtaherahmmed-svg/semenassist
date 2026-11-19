@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import { createTRPCClient } from "@/lib/trpc";
-import { getDeviceLicenseIdentity, signDeviceLicenseChallenge, verifySignedUpdateManifest } from "@/lib/vision";
+import { getDeviceLicenseIdentity, getNativeUpdateDownloadStatus, installNativeVerifiedApk, signDeviceLicenseChallenge, startNativeUpdateDownload, verifySignedUpdateManifest } from "@/lib/vision";
 
 export async function activateDeviceLicense(serial: string) {
   const normalizedSerial = serial.trim().toUpperCase();
@@ -64,4 +64,25 @@ export async function checkForAppUpdate(currentVersionCode: number, channel: "st
   const valid = await verifySignedUpdateManifest(canonicalManifest, result.signature, publicKeyPem);
   if (!valid) throw new Error("تم رفض التحديث لأن التوقيع الرقمي للبيانات غير صالح.");
   return { ...result, signatureVerified: true as const };
+}
+
+export type VerifiedAppUpdate = Extract<
+  Awaited<ReturnType<typeof checkForAppUpdate>>,
+  { updateAvailable: true }
+> & { signatureVerified: true };
+
+export async function startVerifiedAppUpdateDownload(update: VerifiedAppUpdate) {
+  if (!update.signatureVerified) throw new Error("بيانات التحديث لم تجتز التحقق الرقمي.");
+  return startNativeUpdateDownload(update.manifest.apkUrl, update.manifest.sha256);
+}
+
+export async function getAppUpdateDownloadProgress(downloadId: number) {
+  return getNativeUpdateDownloadStatus(downloadId);
+}
+
+export async function installVerifiedAppUpdate(downloadId: number, update: VerifiedAppUpdate) {
+  if (!update.signatureVerified) throw new Error("بيانات التحديث لم تجتز التحقق الرقمي.");
+  const status = await getNativeUpdateDownloadStatus(downloadId);
+  if (status.state !== "downloaded") throw new Error("يجب اكتمال تنزيل التحديث أولًا.");
+  return installNativeVerifiedApk(downloadId, update.manifest.sha256);
 }
