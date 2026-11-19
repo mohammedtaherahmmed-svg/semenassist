@@ -21,14 +21,14 @@
 
 ### Device license service
 
-The backend is authoritative. A license record represents one allowed installation, not a release version.
+The backend is authoritative. A license record represents exactly one allowed Android installation in this phase, not a release version.
 
 Proposed records (subject to migration review):
 - `device_licenses`: license identifier, hashed serial, status, validity window, feature flags, created/updated timestamps.
 - `licensed_devices`: license ID, generated installation ID, public-key fingerprint, app version, platform, activation/last-seen timestamps, status.
 - `license_events`: activation, validation, revoke, transfer and administrative events.
 
-Do not store plaintext serials after issuance. Store a cryptographic hash/HMAC suitable for lookup and compare safely. Generate activation challenges server-side. Bind a device to a public key generated and retained by Android Keystore where supported. The private key must never leave the device. The server signs short-lived license assertions; the app verifies them using a pinned public verification key. TLS is mandatory.
+Do not store plaintext serials after issuance. Store a cryptographic hash/HMAC suitable for lookup and compare safely. Generate activation challenges server-side. Bind a device to a public key generated and retained by Android Keystore where supported. The private key must never leave the device. The app proves possession of the device private key by signing a fresh, single-use server challenge. The backend checks license status on every online validation. TLS is mandatory.
 
 The device identity must not rely on Android ID alone. Reinstall/reset and device-transfer behavior must be explicit administrative flows. Since the approved mode is online, failure to reach the licensing service must not silently grant a new activation. Define a bounded, configurable grace policy only if product requirements later authorize it.
 
@@ -41,7 +41,7 @@ Proposed operations:
 - validate(license ID, signed device proof, app version)
 - deactivate/transfer (admin-authorized)
 - revoke (admin-authorized)
-- issue license (admin-authorized)
+- issue one-device license (admin-authorized)
 - list licenses/devices and audit events (admin-authorized)
 
 All privileged operations require server-side authorization and audit logging. Client-supplied role claims are never trusted.
