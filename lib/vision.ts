@@ -47,6 +47,9 @@ type NativeVisionModule = {
   getLicenseIdentity(): Promise<LicenseIdentity>;
   signLicenseChallenge(nonceBase64Url: string): Promise<string>;
   verifyUpdateManifest(manifestJson: string, signatureBase64: string, publicKeyPem: string): Promise<boolean>;
+  downloadUpdateApk(apkUrl: string, expectedSha256: string): Promise<{ downloadId: number }>;
+  getUpdateDownloadStatus(downloadId: number): Promise<{ state: string; bytesDownloaded: number; totalBytes: number }>;
+  installVerifiedApk(downloadId: number, expectedSha256: string): Promise<{ needsInstallPermission?: boolean; installerLaunched?: boolean; sha256Verified?: boolean }>;
 };
 
 export async function getDeviceLicenseIdentity(): Promise<LicenseIdentity> {
@@ -121,4 +124,16 @@ export function validateLocalVideoSize(sizeBytes: number) {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) throw new Error("حجم ملف الفيديو غير صالح.");
   if (sizeBytes > MAX_VIDEO_BYTES) throw new Error(`حجم الفيديو أكبر من الحد المسموح ${MAX_VIDEO_LABEL}.`);
   return true;
+}
+
+export async function startNativeUpdateDownload(apkUrl: string, sha256: string) {
+  return getNativeVision().downloadUpdateApk(apkUrl, sha256);
+}
+
+export async function getNativeUpdateDownloadStatus(downloadId: number) {
+  return getNativeVision().getUpdateDownloadStatus(downloadId);
+}
+
+export async function installNativeVerifiedApk(downloadId: number, sha256: string) {
+  return getNativeVision().installVerifiedApk(downloadId, sha256);
 }
