@@ -209,6 +209,7 @@ export const licensedDevices = mysqlTable("licensed_devices", {
 }, (table) => ({
   installationUnique: uniqueIndex("licensed_devices_installation_uq").on(table.installationId),
   licenseIdx: index("licensed_devices_license_idx").on(table.licenseId),
+  licenseUnique: uniqueIndex("licensed_devices_license_uq").on(table.licenseId),
   fingerprintIdx: index("licensed_devices_fingerprint_idx").on(table.keyFingerprint),
 }));
 
