@@ -7,7 +7,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import {
   appReleases,
   deviceActivationChallenges,
@@ -66,6 +66,11 @@ export async function issueDeviceLicense(input: {
 export async function createActivationChallenge(installationId: string) {
   const db = await getDb();
   if (!db) throw new Error("قاعدة البيانات غير متاحة");
+  // Keep the challenge table bounded; retain a short audit/debug window.
+  await db.delete(deviceActivationChallenges).where(lt(
+    deviceActivationChallenges.expiresAt,
+    new Date(Date.now() - 60 * 60 * 1000),
+  ));
   const challengeId = randomBytes(24).toString("hex");
   const nonce = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
