@@ -7,12 +7,13 @@ The licensing APIs are implemented in `server/licensing.ts` and exposed through 
 Configure these only in the hosting provider's secret manager (never in Git):
 
 - `LICENSE_SERIAL_PEPPER`: random secret of at least 32 characters. Keep it stable; rotating it invalidates lookup of all issued serials.
-- `UPDATE_MANIFEST_PRIVATE_KEY`: PEM-encoded Ed25519 private key used to sign release manifests. Keep its matching public key for the Android client build. Never ship the private key in the APK.
+- `UPDATE_MANIFEST_PRIVATE_KEY`: PEM-encoded RSA private key used to sign release manifests. Keep it only in the hosting secret manager.
+- `EXPO_PUBLIC_UPDATE_MANIFEST_PUBLIC_KEY`: matching PEM public key supplied at Android build time. This is public verification material and is embedded in the app; it must match the server private key.
 
 Example key generation (run in a secure local terminal; keep the private key private):
 
 ```sh
-openssl genpkey -algorithm ED25519 -out update-manifest-private.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out update-manifest-private.pem
 openssl pkey -in update-manifest-private.pem -pubout -out update-manifest-public.pem
 ```
 
@@ -22,17 +23,21 @@ Apply migrations `0004_device_licensing_updates.sql`, `0005_device_activation_ch
 
 ## Activation protocol
 
-1. Client creates an installation key pair (Ed25519) in Android Keystore; private key must be non-exportable.
+1. Client creates an installation key pair (RSA-2048) in Android Keystore; private key must be non-exportable.
 2. Client requests a short-lived challenge for its random installation ID.
 3. Client signs the returned nonce with its private key.
 4. Client sends serial, public key, challenge ID and signature to `licensing.activate`.
 5. For later online validation, client requests a fresh challenge and signs it; server verifies against the stored public key.
 
-Challenge lifetime is five minutes and each challenge is single-use. The Android client implementation and end-to-end hardware-backed Keystore validation are still pending.
+Challenge lifetime is five minutes and each challenge is single-use. The Android native module now creates an RSA-2048 signing key in Android Keystore and exposes challenge signing to TypeScript. Full activation UI and physical-device verification are still pending.
 
 ## Update publishing
 
-Only HTTPS APK URLs are accepted. The service signs canonical release metadata with Ed25519. Android must pin the corresponding public key and verify the signature and APK SHA-256 before handing the APK to Android's package installer. The client installer flow, package-signing certificate continuity checks, and real-device tests are still pending.
+Only HTTPS APK URLs are accepted. The service signs canonical release metadata with RSA-2048. Android must pin the corresponding public key and verify the signature and APK SHA-256 before handing the APK to Android's package installer. The client-side manifest signature verification, installer flow, package-signing certificate continuity checks, and real-device tests are still pending.
+
+## Canonical manifest verification
+
+The Android client verifies the exact JSON field order used by the server: `version`, `versionCode`, `channel`, `minSupportedVersionCode`, `mandatory`, `apkUrl`, `sha256`, `fileSizeBytes`, `releaseNotes`. The signature is RSA/SHA-256 (PKCS#1 v1.5). The native Android module verifies it using the pinned public key before the client can treat the release as trusted.
 
 ## Operational constraints
 
