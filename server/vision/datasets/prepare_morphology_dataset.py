@@ -2,7 +2,7 @@
 """Prepare expert-reviewed morphology polygons for YOLO-seg training.
 
 Input: app-exported morphology-dataset-manifest.json and a sibling images/ directory.
-Only adjudicated, two-reviewer-consistent objects with valid masks are eligible.
+Only adjudicated images with two independent reviews, expert-resolved disagreements, and valid masks are eligible.
 Splits are deterministic and grouped by pseudonymous sample_id to prevent leakage.
 """
 from __future__ import annotations
