@@ -86,6 +86,8 @@ private class Kalman2D(initial: Detection) {
   }
 }
 
+private const val MAX_MISSED_SAMPLES = 2
+
 private data class Track(
   val points: MutableList<Detection>,
   val frameIndices: MutableList<Int>,
@@ -177,7 +179,6 @@ class SemenAssistVisionModule : Module() {
       val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
       mapOf("downloadId" to manager.enqueue(request))
     }
-
     AsyncFunction("getUpdateDownloadStatus") { downloadId: Long ->
       val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
       val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -357,8 +358,7 @@ class SemenAssistVisionModule : Module() {
     val scaledWidth = max(1.0, sourceWidth * sourceScale)
     val scaledHeight = max(1.0, sourceHeight * sourceScale)
     tracks.flatMap { it.points }.forEach { point ->
-      val row = min(7, max(0, (point.y / scaledHeight * 8).toInt()))
-      val column = min(11, max(0, (point.x / scaledWidth * 12).toInt()))
+      val row = min(7, max(0, (point.y / scaledHeight * 8).toInt()))      val column = min(11, max(0, (point.x / scaledWidth * 12).toInt()))
       heatmap[row][column] += 1
     }
     val retentionPct = if (validTracks.isEmpty()) 0.0 else validTracks.map { min(1.0, it.points.size.toDouble() / sampleCount) }.average() * 100.0
@@ -415,10 +415,10 @@ class SemenAssistVisionModule : Module() {
         "totalTracksCreated" to tracks.size,
         "validTracks" to validTracks.size,
         "minimumTrackLength" to 3,
-        "maxGapSamples" to 2,
+        "maxGapSamples" to MAX_MISSED_SAMPLES,
         "identitySwitches" to null,
         "fragmentation" to null,
-        "note" to "Identity switches and fragmentation require annotated ground truth."
+        "note" to "A track can bridge up to MAX_MISSED_SAMPLES decoded sample slots; identity switches and fragmentation require annotated ground truth."
       ),
       "tracking" to mapOf(
         "trackCount" to validTracks.size, "retentionPct" to retentionPct,
@@ -537,8 +537,7 @@ class SemenAssistVisionModule : Module() {
               minv[j] = current
               way[j] = j0
             }
-            if (minv[j] < delta) {
-              delta = minv[j]
+            if (minv[j] < delta) {              delta = minv[j]
               j1 = j
             }
           }
@@ -570,7 +569,7 @@ class SemenAssistVisionModule : Module() {
     for (index in tracks.indices) {
       val track = tracks[index]
       val gap = frame - track.lastFrame
-      if (gap !in 1..2) continue
+      if (gap !in 1..(MAX_MISSED_SAMPLES + 1)) continue
       val dt = max(1, frame - track.kalmanFrame)
       predicted.add(track.kalman.predict(dt.toDouble()))
       track.kalmanFrame = frame
