@@ -1,4 +1,5 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { AppHeader, COLORS, Divider, MedicalBanner, PrimaryButton, SecondaryButton, SectionTitle, StatusPill } from "@/components/clinical-ui";
@@ -10,6 +11,7 @@ const roleLabels = { technician: "فني مختبر", supervisor: "مشرف", ad
 
 export default function SettingsScreen() {
   const { user, loading, logout } = useAuth();
+  const router = useRouter();
 
   return <ScreenContainer><ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
     <AppHeader eyebrow="الحساب والسياسات" title="الإعدادات" />
@@ -23,6 +25,9 @@ export default function SettingsScreen() {
       <StatusPill label={user ? roleLabels[user.role] : "ضيف"} tone={user ? "success" : "warning"} />
     </View>
     {user ? <SecondaryButton label="تسجيل الخروج" icon="logout" onPress={logout} /> : <PrimaryButton label="تسجيل الدخول بحساب المختبر" icon="login" onPress={() => { void startOAuthLogin(); }} />}
+
+    <SectionTitle title="تشخيص التطبيق" detail="لعرض الأخطاء المحفوظة ومشاركتها مع الدعم الفني" />
+    <SecondaryButton label="فتح سجل الأخطاء والتشخيص" icon="bug-report" onPress={() => router.push("/diagnostics")} />
 
     <SectionTitle title="صلاحيات العمل" detail="كل إجراء حساس يُسجّل باسم المستخدم" />
     <View style={styles.permissionCard}>
