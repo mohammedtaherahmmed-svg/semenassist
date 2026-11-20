@@ -6,12 +6,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform } from "react-native";
+import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaFrameContext, SafeAreaInsetsContext, SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { ThemeProvider } from "@/lib/theme-provider";
+import { installGlobalErrorHandlers, recordDiagnostic } from "@/lib/diagnostics";
+
+installGlobalErrorHandlers();
+void SplashScreen.preventAutoHideAsync().catch((error) => {
+  void recordDiagnostic("splash.prevent-auto-hide-failed", error);
+});
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -23,13 +30,28 @@ export default function RootLayout() {
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
-  useEffect(() => { initManusRuntime(); }, []);
+
+  useEffect(() => {
+    void recordDiagnostic("startup.root-layout-mounted");
+    try {
+      initManusRuntime();
+      void recordDiagnostic("startup.manus-runtime-initialized");
+    } catch (error) {
+      void recordDiagnostic("startup.manus-runtime-failed", error);
+    }
+    void SplashScreen.hideAsync().then(() => {
+      void recordDiagnostic("startup.splash-hidden");
+    }).catch((error) => {
+      void recordDiagnostic("startup.splash-hide-failed", error);
+    });
+  }, []);
+
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => { setInsets(metrics.insets); setFrame(metrics.frame); }, []);
   useEffect(() => { if (Platform.OS !== "web") return; return subscribeSafeAreaInsets(handleSafeAreaUpdate); }, [handleSafeAreaUpdate]);
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } } }));
   const [trpcClient] = useState(() => createTRPCClient());
   const providerInitialMetrics = useMemo(() => ({ ...(initialWindowMetrics ?? { insets: initialInsets, frame: initialFrame }), insets: { ...initialInsets, top: Math.max(initialInsets.top, 16), bottom: Math.max(initialInsets.bottom, 12) } }), [initialInsets, initialFrame]);
-  const content = <GestureHandlerRootView style={{ flex: 1 }}><trpc.Provider client={trpcClient} queryClient={queryClient}><QueryClientProvider client={queryClient}><Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="capture" options={{ presentation: "card" }} /><Stack.Screen name="sample/new" options={{ presentation: "card" }} /><Stack.Screen name="sample/[id]" options={{ presentation: "card" }} /><Stack.Screen name="oauth/callback" /></Stack><StatusBar style="dark" /></QueryClientProvider></trpc.Provider></GestureHandlerRootView>;
+  const content = <GestureHandlerRootView style={{ flex: 1 }}><trpc.Provider client={trpcClient} queryClient={queryClient}><QueryClientProvider client={queryClient}><Stack screenOptions={{ headerShown: false }}><Stack.Screen name="(tabs)" /><Stack.Screen name="capture" options={{ presentation: "card" }} /><Stack.Screen name="sample/new" options={{ presentation: "card" }} /><Stack.Screen name="sample/[id]" options={{ presentation: "card" }} /><Stack.Screen name="oauth/callback" /><Stack.Screen name="diagnostics" options={{ presentation: "card" }} /></Stack><StatusBar style="dark" /></QueryClientProvider></trpc.Provider></GestureHandlerRootView>;
   if (Platform.OS === "web") return <ThemeProvider><SafeAreaProvider initialMetrics={providerInitialMetrics}><SafeAreaFrameContext.Provider value={frame}><SafeAreaInsetsContext.Provider value={insets}>{content}</SafeAreaInsetsContext.Provider></SafeAreaFrameContext.Provider></SafeAreaProvider></ThemeProvider>;
   return <ThemeProvider><SafeAreaProvider initialMetrics={providerInitialMetrics}>{content}</SafeAreaProvider></ThemeProvider>;
 }
