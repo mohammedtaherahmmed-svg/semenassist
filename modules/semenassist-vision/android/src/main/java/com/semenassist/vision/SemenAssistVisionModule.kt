@@ -179,6 +179,7 @@ class SemenAssistVisionModule : Module() {
       val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
       mapOf("downloadId" to manager.enqueue(request))
     }
+
     AsyncFunction("getUpdateDownloadStatus") { downloadId: Long ->
       val context = appContext.reactContext ?: error("تعذر الوصول إلى سياق Android.")
       val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -358,7 +359,8 @@ class SemenAssistVisionModule : Module() {
     val scaledWidth = max(1.0, sourceWidth * sourceScale)
     val scaledHeight = max(1.0, sourceHeight * sourceScale)
     tracks.flatMap { it.points }.forEach { point ->
-      val row = min(7, max(0, (point.y / scaledHeight * 8).toInt()))      val column = min(11, max(0, (point.x / scaledWidth * 12).toInt()))
+      val row = min(7, max(0, (point.y / scaledHeight * 8).toInt()))
+      val column = min(11, max(0, (point.x / scaledWidth * 12).toInt()))
       heatmap[row][column] += 1
     }
     val retentionPct = if (validTracks.isEmpty()) 0.0 else validTracks.map { min(1.0, it.points.size.toDouble() / sampleCount) }.average() * 100.0
@@ -537,7 +539,8 @@ class SemenAssistVisionModule : Module() {
               minv[j] = current
               way[j] = j0
             }
-            if (minv[j] < delta) {              delta = minv[j]
+            if (minv[j] < delta) {
+              delta = minv[j]
               j1 = j
             }
           }
