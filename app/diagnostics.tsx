@@ -20,18 +20,19 @@ export default function DiagnosticsScreen() {
 
   const exportLogs = async () => {
     const latest = await readDiagnostics();
+    const lastEntry = latest.length ? latest[latest.length - 1] : undefined;
     const report = [
       "SemenAssist diagnostic report",
-      `Exported: ${new Date().toISOString()}`,
-      `Platform: ${latest.at(-1)?.platform ?? "unknown"}`,
+      "Exported: " + new Date().toISOString(),
+      "Platform: " + (lastEntry?.platform ?? "unknown"),
       "",
       ...latest.map((entry) => [
-        `[${entry.timestamp}] [${entry.level.toUpperCase()}] ${entry.event}`,
-        entry.message ? `Message: ${entry.message}` : "",
-        entry.stack ? `Stack:\\n${entry.stack}` : "",
+        "[" + entry.timestamp + "] [" + entry.level.toUpperCase() + "] " + entry.event,
+        entry.message ? "Message: " + entry.message : "",
+        entry.stack ? "Stack:\n" + entry.stack : "",
         entry.fatal ? "Fatal: yes" : "",
-      ].filter(Boolean).join("\\n")),
-    ].join("\\n\\n");
+      ].filter(Boolean).join("\n")),
+    ].join("\n\n");
     await Share.share({ title: "SemenAssist diagnostic logs", message: report });
   };
 
