@@ -79,10 +79,29 @@ jobs:
           echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
           cp "$APK_PATH" "semenassist-ondevice-ai-preview.apk"
 
+      - name: Collect Android JavaScript source maps
+        if: always()
+        run: |
+          if [ -d android/app/build/generated/sourcemaps ]; then
+            tar -czf semenassist-android-sourcemaps.tar.gz android/app/build/generated/sourcemaps
+            echo "JavaScript source maps archived for this commit."
+          else
+            echo "No generated source-map directory was found; native Logcat may be needed for native crashes." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: semenassist-ondevice-ai-preview-apk
           path: semenassist-ondevice-ai-preview.apk
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload JavaScript source maps
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semenassist-android-sourcemaps-${{ github.sha }}
+          path: semenassist-android-sourcemaps.tar.gz
+          if-no-files-found: warn
           retention-days: 30
