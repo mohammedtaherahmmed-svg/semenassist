@@ -20,8 +20,8 @@ let installed = false;
 
 function redact(value: string): string {
   return value
-    .replace(/Bearer\\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
-    .replace(/(access_token|refresh_token|authorization|password|secret)=([^&\\s]+)/gi, "$1=[REDACTED]")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/(access_token|refresh_token|authorization|password|secret)=([^&\s]+)/gi, "$1=[REDACTED]")
     .slice(0, 12000);
 }
 
@@ -35,14 +35,14 @@ function describe(error: unknown): { message: string; stack?: string } {
 export function recordDiagnostic(event: string, error?: unknown, fatal = false): Promise<void> {
   const detail = error === undefined ? undefined : describe(error);
   const entry: DiagnosticEntry = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: String(Date.now()) + "-" + Math.random().toString(36).slice(2, 8),
     timestamp: new Date().toISOString(),
     level: error === undefined ? "info" : "error",
     event: redact(event),
     message: detail?.message,
     stack: detail?.stack,
     fatal,
-    platform: `${Platform.OS} ${String(Platform.Version)}`,
+    platform: Platform.OS + " " + String(Platform.Version),
   };
 
   writeQueue = writeQueue.then(async () => {
