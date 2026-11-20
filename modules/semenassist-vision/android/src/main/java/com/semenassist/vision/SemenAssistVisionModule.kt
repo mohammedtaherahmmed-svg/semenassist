@@ -86,6 +86,8 @@ private class Kalman2D(initial: Detection) {
   }
 }
 
+private const val MAX_MISSED_SAMPLES = 2
+
 private data class Track(
   val points: MutableList<Detection>,
   val frameIndices: MutableList<Int>,
@@ -415,10 +417,10 @@ class SemenAssistVisionModule : Module() {
         "totalTracksCreated" to tracks.size,
         "validTracks" to validTracks.size,
         "minimumTrackLength" to 3,
-        "maxGapSamples" to 2,
+        "maxGapSamples" to MAX_MISSED_SAMPLES,
         "identitySwitches" to null,
         "fragmentation" to null,
-        "note" to "Identity switches and fragmentation require annotated ground truth."
+        "note" to "A track can bridge up to MAX_MISSED_SAMPLES decoded sample slots; identity switches and fragmentation require annotated ground truth."
       ),
       "tracking" to mapOf(
         "trackCount" to validTracks.size, "retentionPct" to retentionPct,
@@ -570,7 +572,7 @@ class SemenAssistVisionModule : Module() {
     for (index in tracks.indices) {
       val track = tracks[index]
       val gap = frame - track.lastFrame
-      if (gap !in 1..2) continue
+      if (gap !in 1..(MAX_MISSED_SAMPLES + 1)) continue
       val dt = max(1, frame - track.kalmanFrame)
       predicted.add(track.kalman.predict(dt.toDouble()))
       track.kalmanFrame = frame
